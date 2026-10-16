@@ -20,12 +20,24 @@ def input(key):
         # Если активно поле ввода кода комнаты, передаём нажатия туда
         if ctx.game.handle_menu_key(key):
             return
-        if key == '1':
-            ctx.game.start_run('commando')
-        elif key == '2':
-            ctx.game.start_run('artificer')
-        elif key == '3':
-            ctx.game.start_run('huntress')
+
+        # В лобби клавиши 1-7 выбирают персонажа для просмотра его описания и модели
+        if ctx.game.menu_state == 'lobby':
+            key_map = {
+                '1': 'commando',
+                '2': 'artificer',
+                '3': 'huntress',
+                '4': 'buzz',
+                '5': 'v1',
+                '6': 'sol',
+                '7': 'gwen'
+            }
+            if key in key_map:
+                ctx.game.select_lobby_character(key_map[key])
+            elif key == 'escape':
+                ctx.game.leave_lobby_to_main()
+        elif ctx.game.menu_state in ('mp_connect', 'settings') and key == 'escape':
+            ctx.game.show_screen('main')
     elif key == 'escape':
         mouse.locked = not mouse.locked
 

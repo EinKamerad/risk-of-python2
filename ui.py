@@ -1,7 +1,8 @@
 from ursina import *
 import math
 import random
-from config import ctx, rgb, is_valid, SETTINGS, ITEM_POOL, ACHIEVEMENTS, SURVIVOR_CLASSES, PROGRESS
+import textwrap
+from config import ctx, rgb, is_valid, clear_children, SETTINGS, ITEM_POOL, ACHIEVEMENTS, SURVIVOR_CLASSES, PROGRESS
 from models import build_survivor_mesh
 from entities import Survivor, RemotePlayer, Enemy, Projectile
 from world import ItemDrop, Chest, build_stage_world
@@ -16,6 +17,16 @@ class GameManager(Entity):
         self.net = NetworkManager()
 
         self.running = False
+        self.menu_state = 'main'  # 'main', 'mp_connect', 'settings', 'lobby', 'in_game'
+        self.selected_char = 'commando'
+
+        # Состояние лобби и голосования
+        self.my_ready = False
+        self.lobby_players = {}  # pid -> {'char_key': str, 'ready': bool}
+        self.lobby_countdown_active = False
+        self.lobby_countdown = 60.0
+        self.lobby_sync_timer = 0.0
+
         self.stage = 1
         self.stage_seed = 1001
         self.stage_name = ''
@@ -31,44 +42,104 @@ class GameManager(Entity):
         self.obstacles = []
         self.teleporter = None
 
-        # Состояние ввода кода комнаты в меню
+        # Состояние ввода кода комнаты
         self.typing_code = False
         self.room_code_input = ""
 
         self.setup_lighting()
         self.setup_menu_diorama()
         self.setup_ui()
+        self.show_screen('main')
 
     def setup_lighting(self):
         DirectionalLight(y=12, z=6, rotation=(45, -35, 0), shadows=False)
         AmbientLight(color=rgb(145, 150, 180, 255))
 
+    # ==========================================
+    # 3D-СЦЕНА ЛОББИ (ЦЕНТРАЛЬНЫЙ ГЕРОЙ + СОЮЗНИКИ СЗАДИ)
+    # ==========================================
     def setup_menu_diorama(self):
         self.diorama_root = Entity(position=(0, 0, 0))
-        Entity(parent=self.diorama_root, model='cube', scale=(13.5, 0.4, 7), y=-0.2, color=rgb(34, 42, 58))
-        Entity(parent=self.diorama_root, model='cube', scale=(12.0, 0.15, 5.5), y=0.05, color=rgb(50, 62, 84))
+
+        # Главный подиум в центре (смещён вправо, чтобы не перекрываться левой панелью описания)
+        self.main_pedestal = Entity(parent=self.diorama_root, position=(1.15, 0, -1.0))
+        Entity(parent=self.main_pedestal, model='cube', scale=(3.4, 0.35, 3.4), y=-0.18, color=rgb(34, 42, 58))
+        Entity(parent=self.main_pedestal, model='cube', scale=(2.8, 0.14, 2.8), y=0.04, color=rgb(55, 70, 96))
+        Entity(parent=self.main_pedestal, model='cube', scale=(2.9, 0.05, 2.9), y=0.10, color=color.cyan, unlit=True)
+
+        self.local_preview_actor = Entity(parent=self.main_pedestal, position=(0, 0.12, 0), rotation_y=15)
+        self.local_preview_parts = build_survivor_mesh(self.local_preview_actor, self.selected_char)
+
+        # Задние постаменты для союзников в мультиплеере
+        self.remote_pedestals = []
+        back_coords = [
+            (-0.95, 0.35, 2.3, 18),
+            (1.15, 0.35, 2.8, 0),
+            (3.25, 0.35, 2.3, -18)
+        ]
+        for bx, by, bz, rot_y in back_coords:
+            ped = Entity(parent=self.diorama_root, position=(bx, by, bz), enabled=False)
+            Entity(parent=ped, model='cube', scale=(2.2, 0.3, 2.2), y=-0.15, color=rgb(28, 34, 48))
+            ring = Entity(parent=ped, model='cube', scale=(1.9, 0.06, 1.9), y=0.03, color=rgb(80, 180, 255), unlit=True)
+            actor = Entity(parent=ped, position=(0, 0.06, 0), rotation_y=rot_y)
+            lbl = Text(
+                text='', parent=ped, y=2.95, scale=8.5,
+                origin=(0, 0), color=color.cyan, billboard=True
+            )
+            self.remote_pedestals.append({
+                'pedestal': ped,
+                'ring': ring,
+                'actor': actor,
+                'label': lbl,
+                'char_key': None,
+                'parts': None
+            })
 
         self.menu_crystal = Entity(
             parent=self.diorama_root, model='diamond',
-            scale=(1.0, 2.2, 1.0), position=(0, 2.4, 2.2),
+            scale=(0.85, 1.85, 0.85), position=(1.15, 3.3, 2.2),
             color=rgb(60, 215, 255), unlit=True
         )
-
-        self.preview_commando = Entity(parent=self.diorama_root, position=(-2.8, 0.12, -0.2), rotation_y=22)
-        self.commando_parts = build_survivor_mesh(self.preview_commando, 'commando')
-
-        self.preview_artificer = Entity(parent=self.diorama_root, position=(0.0, 0.12, -0.4), rotation_y=0)
-        self.artificer_parts = build_survivor_mesh(self.preview_artificer, 'artificer')
-
-        self.preview_huntress = Entity(parent=self.diorama_root, position=(2.8, 0.12, -0.2), rotation_y=-22)
-        self.huntress_parts = build_survivor_mesh(self.preview_huntress, 'huntress')
 
         self.reset_menu_camera()
 
     def reset_menu_camera(self):
         camera.parent = scene
-        camera.position = (0, 2.25, -10.8)
-        camera.rotation = (6, 0, 0)
+        camera.position = (0, 2.15, -8.6)
+        camera.rotation = (5, 0, 0)
+        camera.fov = self.settings.get('fov', 90)
+
+    def rebuild_local_lobby_model(self):
+        clear_children(self.local_preview_actor)
+        self.local_preview_parts = build_survivor_mesh(self.local_preview_actor, self.selected_char)
+
+    def refresh_remote_lobby_models(self):
+        if not self.net.connected or self.menu_state != 'lobby':
+            for slot in self.remote_pedestals:
+                slot['pedestal'].enabled = False
+            return
+
+        peers = sorted(self.lobby_players.items(), key=lambda x: x[0])
+        for idx, slot in enumerate(self.remote_pedestals):
+            if idx < len(peers):
+                pid, info = peers[idx]
+                ckey = info.get('char_key', 'commando')
+                if ckey not in SURVIVOR_CLASSES:
+                    ckey = 'commando'
+                is_rdy = info.get('ready', False)
+
+                slot['pedestal'].enabled = True
+                if slot['char_key'] != ckey:
+                    clear_children(slot['actor'])
+                    slot['parts'] = build_survivor_mesh(slot['actor'], ckey)
+                    slot['char_key'] = ckey
+
+                rdy_str = "ГОТОВ ✓" if is_rdy else "ВЫБИРАЕТ..."
+                slot['label'].text = f"[{pid.upper()}] {SURVIVOR_CLASSES[ckey]['name']}\n[{rdy_str}]"
+                slot['label'].color = color.lime if is_rdy else color.yellow
+                slot['ring'].color = color.lime if is_rdy else rgb(80, 180, 255)
+            else:
+                slot['pedestal'].enabled = False
 
     # ==========================================
     # ФИЗИКА ПОВЕРХНОСТЕЙ И КОЛЛИЗИЙ
@@ -116,82 +187,257 @@ class GameManager(Entity):
             PROGRESS.save()
             self.show_banner(f"ДОСТИЖЕНИЕ: {ach['name']} ({ach['reward_text']})", color.gold, 4.0)
 
+    # ==========================================
+    # ПОСТРОЕНИЕ ВСЕХ ЭКРАНОВ ИНТЕРФЕЙСА
+    # ==========================================
     def setup_ui(self):
-        # 1. ГЛАВНОЕ МЕНЮ
-        self.menu_panel = Entity(parent=camera.ui)
-
-        Entity(parent=self.menu_panel, model='quad', scale=(2.0, 0.16), y=0.42, z=0.02, color=rgb(12, 16, 26, 230))
-        Entity(parent=self.menu_panel, model='quad', scale=(2.0, 0.005), y=0.34, z=-0.01, color=rgb(255, 165, 50))
-
-        Text(
+        # Общая верхняя шапка для меню
+        self.header_panel = Entity(parent=camera.ui)
+        Entity(parent=self.header_panel, model='quad', scale=(2.0, 0.12), y=0.44, z=0.02, color=rgb(12, 16, 26, 235))
+        Entity(parent=self.header_panel, model='quad', scale=(2.0, 0.004), y=0.38, z=-0.01, color=rgb(255, 165, 50))
+        self.header_title = Text(
             text='RISK OF PYTHON 2 : LAN & CO-OP',
-            parent=self.menu_panel, y=0.445, z=-0.02, scale=2.0,
+            parent=self.header_panel, y=0.445, z=-0.02, scale=1.75,
             origin=(0, 0), color=rgb(255, 185, 60)
         )
+
+        # ------------------------------------------
+        # 1. ГЛАВНОЕ МЕНЮ (MAIN MENU)
+        # ------------------------------------------
+        self.main_menu_panel = Entity(parent=camera.ui)
+        Entity(parent=self.main_menu_panel, model='quad', scale=(0.62, 0.58), position=(-0.46, -0.04), z=0.02, color=rgb(14, 18, 30, 235))
+        Entity(parent=self.main_menu_panel, model='quad', scale=(0.62, 0.006), position=(-0.46, 0.25), z=-0.01, color=color.cyan)
+
         Text(
-            text='ВЫБЕРИТЕ ВЫЖИВШЕГО [1 / 2 / 3] ИЛИ ПОДКЛЮЧИТЕСЬ К КОМНАТЕ ДРУГА НИЖЕ',
-            parent=self.menu_panel, y=0.375, z=-0.02, scale=0.88,
-            origin=(0, 0), color=rgb(150, 225, 255)
+            text='ГЛАВНОЕ МЕНЮ',
+            parent=self.main_menu_panel, position=(-0.46, 0.20), z=-0.02,
+            origin=(0, 0), scale=1.25, color=color.white
         )
 
-        # --- ПАНЕЛЬ МУЛЬТИПЛЕЕРА (LAN И КОД КОМНАТЫ) ---
-        Entity(parent=self.menu_panel, model='quad', scale=(1.56, 0.12), y=0.255, z=0.02, color=rgb(16, 22, 36, 235))
+        menu_Actions = [
+            ('ОДИНОЧНАЯ ИГРА', 0.09, rgb(38, 105, 70), rgb(55, 150, 95), self.open_singleplayer_lobby),
+            ('СЕТЕВАЯ ИГРА (CO-OP)', -0.02, rgb(40, 85, 145), rgb(60, 125, 205), lambda: self.show_screen('mp_connect')),
+            ('НАСТРОЙКИ', -0.13, rgb(65, 72, 95), rgb(95, 105, 135), lambda: self.show_screen('settings')),
+            ('ВЫХОД ИЗ ИГРЫ', -0.24, rgb(135, 40, 45), rgb(185, 60, 65), application.quit),
+        ]
+        for label, by, col, hcol, action in menu_Actions:
+            btn = Button(
+                text=label, parent=self.main_menu_panel,
+                scale=(0.50, 0.08), position=(-0.46, by), z=-0.01,
+                color=col, highlight_color=hcol
+            )
+            btn.on_click = action
+
+        # ------------------------------------------
+        # 2. МЕНЮ ПОДКЛЮЧЕНИЯ К СЕТИ (MP CONNECT)
+        # ------------------------------------------
+        self.mp_panel = Entity(parent=camera.ui, enabled=False)
+        Entity(parent=self.mp_panel, model='quad', scale=(0.76, 0.64), position=(-0.42, -0.04), z=0.02, color=rgb(14, 18, 30, 240))
+        Entity(parent=self.mp_panel, model='quad', scale=(0.76, 0.006), position=(-0.42, 0.28), z=-0.01, color=color.cyan)
+
+        Text(
+            text='СЕТЕВАЯ ИГРА (LAN / КОД КОМНАТЫ)',
+            parent=self.mp_panel, position=(-0.42, 0.23), z=-0.02,
+            origin=(0, 0), scale=1.1, color=rgb(150, 225, 255)
+        )
 
         self.btn_host = Button(
             text='СОЗДАТЬ КОМНАТУ (HOST)',
-            parent=self.menu_panel, scale=(0.34, 0.055), position=(-0.56, 0.272), z=-0.01,
-            color=rgb(35, 95, 65), highlight_color=rgb(50, 140, 90)
+            parent=self.mp_panel, scale=(0.64, 0.075), position=(-0.42, 0.13), z=-0.01,
+            color=rgb(35, 100, 68), highlight_color=rgb(50, 145, 95)
         )
         self.btn_host.on_click = self.action_host_room
 
         self.btn_code_box = Button(
             text='КОД: [ НАЖМИТЕ ДЛЯ ВВОДА ]',
-            parent=self.menu_panel, scale=(0.40, 0.055), position=(-0.15, 0.272), z=-0.01,
+            parent=self.mp_panel, scale=(0.64, 0.07), position=(-0.42, 0.03), z=-0.01,
             color=rgb(28, 36, 54), highlight_color=rgb(45, 60, 88)
         )
         self.btn_code_box.on_click = self.toggle_code_typing
 
         self.btn_join_code = Button(
-            text='ВОЙТИ ПО КОДУ',
-            parent=self.menu_panel, scale=(0.25, 0.055), position=(0.21, 0.272), z=-0.01,
+            text='ПОДКЛЮЧИТЬСЯ ПО КОДУ',
+            parent=self.mp_panel, scale=(0.31, 0.07), position=(-0.585, -0.065), z=-0.01,
             color=rgb(40, 85, 145), highlight_color=rgb(60, 120, 200)
         )
         self.btn_join_code.on_click = self.action_join_by_code
 
         self.btn_join_lan = Button(
             text='НАЙТИ В LAN (АВТО)',
-            parent=self.menu_panel, scale=(0.32, 0.055), position=(0.53, 0.272), z=-0.01,
+            parent=self.mp_panel, scale=(0.31, 0.07), position=(-0.255, -0.065), z=-0.01,
             color=rgb(95, 55, 145), highlight_color=rgb(130, 80, 195)
         )
         self.btn_join_lan.on_click = self.action_join_lan
 
         self.net_status_text = Text(
-            text=f'Статус сети: Одиночный режим (Ваш LAN IP: {self.net.host_ip})',
-            parent=self.menu_panel, position=(0, 0.215), z=-0.02,
+            text=f'Ваш локальный IP: {self.net.host_ip}',
+            parent=self.mp_panel, position=(-0.42, -0.16), z=-0.02,
             origin=(0, 0), scale=0.82, color=color.cyan
         )
 
-        # --- КАРТОЧКИ 3 ПЕРСОНАЖЕЙ ---
-        cards = [
-            ('commando', -0.48, rgb(235, 125, 35), "[1] COMMANDO\nHP: 115 | SPD: 9.6\nM1: Double Tap | M2: Phase\nShift: Dive | R: Barrage"),
-            ('artificer', 0.0, rgb(165, 65, 235), "[2] ARTIFICER\nHP: 100 | SPD: 8.5\nM1: Plasma | M2: Nano-Bomb\nShift: Surge | R: Ion Strike"),
-            ('huntress', 0.48, rgb(225, 50, 80), "[3] HUNTRESS\nHP: 95 | SPD: 10.8\nM1: Homing Bow | M2: Glaive\nShift: Blink | R: Arrow Rain")
-        ]
-        for key, cx, col, label in cards:
-            Entity(parent=self.menu_panel, model='quad', scale=(0.43, 0.23), position=(cx, -0.29), z=0.01, color=col)
-            btn = Button(
-                text=label, parent=self.menu_panel, scale=(0.415, 0.215),
-                position=(cx, -0.29), z=-0.01, color=rgb(24, 30, 44, 245), highlight_color=col
-            )
-            btn.on_click = lambda k=key: self.start_run(k)
+        btn_mp_back = Button(
+            text='<- НАЗАД В ГЛАВНОЕ МЕНЮ',
+            parent=self.mp_panel, scale=(0.46, 0.065), position=(-0.42, -0.26), z=-0.01,
+            color=rgb(60, 65, 82), highlight_color=rgb(85, 92, 115)
+        )
+        btn_mp_back.on_click = lambda: self.show_screen('main')
 
-        Entity(parent=self.menu_panel, model='quad', scale=(1.5, 0.045), y=-0.46, z=0.02, color=rgb(12, 16, 26, 210))
+        # ------------------------------------------
+        # 3. МЕНЮ НАСТРОЕК (SETTINGS)
+        # ------------------------------------------
+        self.settings_panel = Entity(parent=camera.ui, enabled=False)
+        Entity(parent=self.settings_panel, model='quad', scale=(0.76, 0.64), position=(-0.42, -0.04), z=0.02, color=rgb(14, 18, 30, 240))
+        Entity(parent=self.settings_panel, model='quad', scale=(0.76, 0.006), position=(-0.42, 0.28), z=-0.01, color=color.gold)
+
         Text(
-            text='Управление: [WASD] Ходьба | [Space] Прыжок | [ЛКМ/ПКМ/Shift/R] Навыки | [E] Действие | [Tab] Статистика',
-            parent=self.menu_panel, y=-0.46, z=-0.02, origin=(0, 0), scale=0.76, color=rgb(200, 210, 230)
+            text='НАСТРОЙКИ ИГРЫ',
+            parent=self.settings_panel, position=(-0.42, 0.23), z=-0.02,
+            origin=(0, 0), scale=1.15, color=color.gold
         )
 
-        # 2. БОЕВОЙ ИНТЕРФЕЙС (HUD)
+        self.lbl_sens = Text(text='', parent=self.settings_panel, position=(-0.74, 0.13), z=-0.02, scale=0.88, color=color.white)
+        b_s_minus = Button(text='-', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.22, 0.12), z=-0.01, color=rgb(45, 55, 75))
+        b_s_plus = Button(text='+', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.12, 0.12), z=-0.01, color=rgb(45, 55, 75))
+        b_s_minus.on_click = lambda: self.change_setting('sensitivity', -5)
+        b_s_plus.on_click = lambda: self.change_setting('sensitivity', 5)
+
+        self.lbl_fov = Text(text='', parent=self.settings_panel, position=(-0.74, 0.03), z=-0.02, scale=0.88, color=color.white)
+        b_f_minus = Button(text='-', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.22, 0.02), z=-0.01, color=rgb(45, 55, 75))
+        b_f_plus = Button(text='+', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.12, 0.02), z=-0.01, color=rgb(45, 55, 75))
+        b_f_minus.on_click = lambda: self.change_setting('fov', -5)
+        b_f_plus.on_click = lambda: self.change_setting('fov', 5)
+
+        self.lbl_fog = Text(text='', parent=self.settings_panel, position=(-0.74, -0.07), z=-0.02, scale=0.88, color=color.white)
+        b_g_minus = Button(text='-', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.22, -0.08), z=-0.01, color=rgb(45, 55, 75))
+        b_g_plus = Button(text='+', parent=self.settings_panel, scale=(0.07, 0.055), position=(-0.12, -0.08), z=-0.01, color=rgb(45, 55, 75))
+        b_g_minus.on_click = lambda: self.change_setting('fog', -0.002)
+        b_g_plus.on_click = lambda: self.change_setting('fog', 0.002)
+
+        self.btn_fullscreen = Button(
+            text='ПОЛНЫЙ ЭКРАН: ВЫКЛ',
+            parent=self.settings_panel, scale=(0.48, 0.065), position=(-0.42, -0.17), z=-0.01,
+            color=rgb(45, 65, 95), highlight_color=rgb(65, 95, 135)
+        )
+        self.btn_fullscreen.on_click = lambda: self.change_setting('fullscreen', 0)
+
+        btn_set_back = Button(
+            text='<- НАЗАД В ГЛАВНОЕ МЕНЮ',
+            parent=self.settings_panel, scale=(0.46, 0.065), position=(-0.42, -0.27), z=-0.01,
+            color=rgb(60, 65, 82), highlight_color=rgb(85, 92, 115)
+        )
+        btn_set_back.on_click = lambda: self.show_screen('main')
+        self.refresh_settings_labels()
+
+        # ------------------------------------------
+        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (SINGLE & CO-OP)
+        # ------------------------------------------
+        self.lobby_panel = Entity(parent=camera.ui, enabled=False)
+
+        # Иконки персонажей слева сверху (7 кнопок в ряд)
+        Text(
+            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 7]:',
+            parent=self.lobby_panel, position=(-0.84, 0.355), z=-0.02,
+            scale=0.82, color=rgb(170, 220, 255)
+        )
+
+        self.char_icon_Widgets = {}
+        char_order = [
+            ('commando', '1', 'CMD', rgb(235, 130, 35)),
+            ('artificer', '2', 'ART', rgb(165, 65, 235)),
+            ('huntress', '3', 'HNT', rgb(225, 50, 80)),
+            ('buzz', '4', 'BUZ', rgb(115, 225, 65)),
+            ('v1', '5', 'V1', rgb(55, 130, 245)),
+            ('sol', '6', 'SOL', rgb(225, 45, 45)),
+            ('gwen', '7', 'GWN', rgb(70, 200, 255)),
+        ]
+        for idx, (ckey, num_str, short_code, col) in enumerate(char_order):
+            ix = -0.79 + idx * 0.106
+            iy = 0.285
+            border = Entity(
+                parent=self.lobby_panel, model='quad',
+                scale=(0.098, 0.082), position=(ix, iy), z=0.01, color=col
+            )
+            btn = Button(
+                text='', parent=self.lobby_panel,
+                scale=(0.088, 0.072), position=(ix, iy), z=-0.01,
+                color=rgb(22, 28, 42, 245), highlight_color=col
+            )
+            btn.on_click = lambda k=ckey: self.select_lobby_character(k)
+            # Отдельный Text на панели, чтобы шрифт всегда был идеально чётким
+            lbl = Text(
+                text=f"[{num_str}]\n{short_code}",
+                parent=self.lobby_panel, position=(ix, iy), z=-0.03,
+                origin=(0, 0), scale=0.78, color=color.white
+            )
+            self.char_icon_Widgets[ckey] = {'border': border, 'btn': btn, 'lbl': lbl, 'base_col': col}
+
+        # Левая панель с описанием персонажа и его 4 навыков
+        Entity(
+            parent=self.lobby_panel, model='quad',
+            scale=(0.76, 0.64), position=(-0.47, -0.095), z=0.02,
+            color=rgb(12, 16, 28, 238)
+        )
+        self.lobby_char_line = Entity(
+            parent=self.lobby_panel, model='quad',
+            scale=(0.76, 0.006), position=(-0.47, 0.225), z=-0.01,
+            color=color.orange
+        )
+
+        self.lobby_char_title = Text(
+            text='', parent=self.lobby_panel, position=(-0.82, 0.20),
+            z=-0.02, scale=1.25, color=color.orange
+        )
+        self.lobby_char_subtitle = Text(
+            text='', parent=self.lobby_panel, position=(-0.82, 0.155),
+            z=-0.02, scale=0.80, color=rgb(175, 210, 245)
+        )
+        self.lobby_char_stats = Text(
+            text='', parent=self.lobby_panel, position=(-0.82, 0.11),
+            z=-0.02, scale=0.78, color=color.gold
+        )
+        self.lobby_skills_text = Text(
+            text='', parent=self.lobby_panel, position=(-0.82, 0.055),
+            z=-0.02, scale=0.74, color=color.white
+        )
+
+        # Правая панель лобби (статус комнаты, список игроков, таймер и кнопка Старт/Готов)
+        Entity(
+            parent=self.lobby_panel, model='quad',
+            scale=(0.54, 0.28), position=(0.58, 0.20), z=0.02,
+            color=rgb(12, 16, 28, 225)
+        )
+        self.lobby_room_info = Text(
+            text='РЕЖИМ: ОДИНОЧНАЯ ИГРА',
+            parent=self.lobby_panel, position=(0.33, 0.315), z=-0.02,
+            scale=0.82, color=color.lime
+        )
+        self.lobby_players_list = Text(
+            text='', parent=self.lobby_panel, position=(0.33, 0.255),
+            z=-0.02, scale=0.76, color=color.white
+        )
+
+        self.lobby_timer_text = Text(
+            text='', parent=self.lobby_panel, position=(0.58, -0.25),
+            z=-0.02, origin=(0, 0), scale=1.05, color=color.yellow
+        )
+
+        self.btn_lobby_ready = Button(
+            text='НАЧАТЬ ЗАБЕГ (СТАРТ)',
+            parent=self.lobby_panel, scale=(0.48, 0.085), position=(0.58, -0.34), z=-0.01,
+            color=rgb(38, 120, 70), highlight_color=rgb(55, 165, 95)
+        )
+        self.btn_lobby_ready.on_click = self.action_lobby_ready
+
+        self.btn_lobby_leave = Button(
+            text='<- ПОКИНУТЬ ЛОББИ',
+            parent=self.lobby_panel, scale=(0.32, 0.055), position=(0.58, -0.43), z=-0.01,
+            color=rgb(85, 40, 48), highlight_color=rgb(125, 55, 65)
+        )
+        self.btn_lobby_leave.on_click = self.leave_lobby_to_main
+
+        # ------------------------------------------
+        # 5. БОЕВОЙ ИНТЕРФЕЙС (HUD)
+        # ------------------------------------------
         self.hud_panel = Entity(parent=camera.ui, enabled=False)
         self.crosshair = Text(text='+', parent=self.hud_panel, origin=(0, 0), z=-0.02, scale=1.6, color=color.cyan)
 
@@ -303,11 +549,209 @@ class GameManager(Entity):
         self.tab_text = Text(text='', parent=self.tab_panel, position=(-0.39, 0.22), z=-0.02, scale=0.90, color=color.white)
 
         # Баннер уведомлений
-        self.banner_text = Text(text='', parent=self.hud_panel, position=(0, 0.19), z=-0.02, origin=(0, 0), scale=1.15, color=color.yellow)
+        self.banner_text = Text(text='', parent=camera.ui, position=(0, 0.19), z=-0.04, origin=(0, 0), scale=1.15, color=color.yellow)
         self.banner_timer = 0.0
 
+        self.select_lobby_character(self.selected_char)
+
     # ==========================================
-    # ДЕЙСТВИЯ МУЛЬТИПЛЕЕРА В МЕНЮ
+    # НАВИГАЦИЯ ПО ЭКРАНАМ МЕНЮ И НАСТРОЙКАМ
+    # ==========================================
+    def show_screen(self, screen_name):
+        self.typing_code = False
+        self.menu_state = screen_name
+        self.header_panel.enabled = (screen_name != 'in_game')
+        self.main_menu_panel.enabled = (screen_name == 'main')
+        self.mp_panel.enabled = (screen_name == 'mp_connect')
+        self.settings_panel.enabled = (screen_name == 'settings')
+        self.lobby_panel.enabled = (screen_name == 'lobby')
+        self.hud_panel.enabled = (screen_name == 'in_game')
+        self.diorama_root.enabled = (screen_name != 'in_game')
+
+        if screen_name != 'in_game':
+            mouse.locked = False
+            window.color = rgb(18, 20, 32)
+            scene.fog_color = rgb(18, 20, 32)
+            self.reset_menu_camera()
+            self.refresh_remote_lobby_models()
+            if screen_name == 'lobby':
+                self.update_lobby_ui()
+
+    def change_setting(self, key, delta):
+        if key == 'sensitivity':
+            self.settings['sensitivity'] = clamp(self.settings['sensitivity'] + delta, 10, 120)
+        elif key == 'fov':
+            self.settings['fov'] = clamp(self.settings['fov'] + delta, 65, 115)
+            camera.fov = self.settings['fov']
+        elif key == 'fog':
+            self.settings['fog_density'] = clamp(round(self.settings['fog_density'] + delta, 3), 0.0, 0.025)
+            scene.fog_density = self.settings['fog_density']
+        elif key == 'fullscreen':
+            self.settings['fullscreen'] = not self.settings['fullscreen']
+            window.fullscreen = self.settings['fullscreen']
+        self.refresh_settings_labels()
+
+    def refresh_settings_labels(self):
+        self.lbl_sens.text = f"Чувствительность мыши: {self.settings['sensitivity']}"
+        self.lbl_fov.text = f"Угол обзора камеры (FOV): {self.settings['fov']}"
+        self.lbl_fog.text = f"Плотность тумана: {self.settings['fog_density']:.3f}"
+        fs_txt = "ВКЛ" if self.settings['fullscreen'] else "ВЫКЛ"
+        self.btn_fullscreen.text = f"ПОЛНЫЙ ЭКРАН: {fs_txt}"
+
+    # ==========================================
+    # ЛОГИКА ЛОББИ, ВЫБОРА ГЕРОЯ И ТАЙМЕРА ГОТОВНОСТИ
+    # ==========================================
+    def open_singleplayer_lobby(self):
+        self.net.stop_session()
+        self.lobby_players.clear()
+        self.my_ready = False
+        self.lobby_countdown_active = False
+        self.lobby_countdown = 60.0
+        self.show_screen('lobby')
+
+    def open_multiplayer_lobby(self):
+        self.my_ready = False
+        self.lobby_countdown_active = False
+        self.lobby_countdown = 60.0
+        self.show_screen('lobby')
+        self.broadcast_lobby_state()
+
+    def leave_lobby_to_main(self):
+        self.net.stop_session()
+        self.lobby_players.clear()
+        self.my_ready = False
+        self.lobby_countdown_active = False
+        self.show_screen('main')
+
+    def select_lobby_character(self, char_key):
+        if char_key not in SURVIVOR_CLASSES:
+            return
+        self.selected_char = char_key
+        cfg = SURVIVOR_CLASSES[char_key]
+
+        # Подсветка выбранной иконки
+        for k, w in self.char_icon_Widgets.items():
+            if k == char_key:
+                w['border'].color = color.white
+                w['border'].scale = (0.104, 0.088)
+                w['lbl'].color = color.yellow
+            else:
+                w['border'].color = w['base_col']
+                w['border'].scale = (0.096, 0.080)
+                w['lbl'].color = color.white
+
+        # Обновление текста описания слева с аккуратным переносом строк
+        self.lobby_char_line.color = cfg['body_color']
+        self.lobby_char_title.text = cfg['name']
+        self.lobby_char_title.color = cfg['body_color']
+        self.lobby_char_subtitle.text = cfg['subtitle']
+        self.lobby_char_stats.text = (
+            f"HP: {cfg['hp']}   |   Скорость: {cfg['speed']}   |   "
+            f"Урон: {cfg['damage']}   |   Атака: {cfg['fire_rate']}/с"
+        )
+
+        skill_blocks = []
+        for sk_id in ('m1', 'm2', 'shift', 'r'):
+            sk = cfg['skills'][sk_id]
+            wrapped_desc = textwrap.fill(sk['desc'], width=46)
+            skill_blocks.append(f"* {sk['name']} (КД: {sk['cd']}с)\n  {wrapped_desc}")
+        self.lobby_skills_text.text = '\n\n'.join(skill_blocks)
+
+        self.rebuild_local_lobby_model()
+        self.broadcast_lobby_state()
+        self.update_lobby_ui()
+
+    def broadcast_lobby_state(self):
+        if self.net.connected:
+            self.net.broadcast({
+                'type': 'lobby_state',
+                'player_id': self.net.my_id,
+                'char_key': self.selected_char,
+                'ready': self.my_ready
+            })
+
+    def action_lobby_ready(self):
+        # В одиночной игре стартуем мгновенно
+        if not self.net.connected:
+            self.start_run(self.selected_char)
+            return
+
+        # В мультиплеере голос "Готов" отменить нельзя!
+        if self.my_ready:
+            return
+
+        self.my_ready = True
+        self.broadcast_lobby_state()
+        self.evaluate_lobby_countdown()
+        self.update_lobby_ui()
+
+    def evaluate_lobby_countdown(self):
+        if not self.net.connected:
+            return
+        total_p = 1 + len(self.lobby_players)
+        ready_p = (1 if self.my_ready else 0) + sum(1 for info in self.lobby_players.values() if info.get('ready'))
+
+        if ready_p >= 1 and not self.lobby_countdown_active:
+            self.lobby_countdown_active = True
+            self.lobby_countdown = 60.0
+
+        if ready_p >= total_p and self.lobby_countdown_active:
+            self.lobby_countdown = min(self.lobby_countdown, 3.0)
+
+    def update_lobby_ui(self):
+        if self.menu_state != 'lobby':
+            return
+
+        if not self.net.connected:
+            self.lobby_room_info.text = "РЕЖИМ: ОДИНОЧНАЯ ИГРА"
+            self.lobby_room_info.color = color.cyan
+            self.lobby_players_list.text = (
+                f"Выживший: {SURVIVOR_CLASSES[self.selected_char]['name']}\n"
+                f"Нажмите кнопку ниже для старта забега."
+            )
+            self.lobby_timer_text.text = ""
+            self.btn_lobby_ready.text = "НАЧАТЬ ЗАБЕГ (СТАРТ)"
+            self.btn_lobby_ready.color = rgb(38, 120, 70)
+        else:
+            role_str = "HOST" if self.net.mode == 'host' else "CLIENT"
+            self.lobby_room_info.text = f"КОМНАТА: {self.net.room_code}  ({role_str})"
+            self.lobby_room_info.color = color.lime
+
+            lines = []
+            my_rdy_str = "ГОТОВ ✓" if self.my_ready else "НЕ ГОТОВ"
+            lines.append(f"• ВЫ [{self.net.my_id.upper()}]: {SURVIVOR_CLASSES[self.selected_char]['name']} — [{my_rdy_str}]")
+            for pid, info in sorted(self.lobby_players.items()):
+                ck = info.get('char_key', 'commando')
+                cname = SURVIVOR_CLASSES.get(ck, SURVIVOR_CLASSES['commando'])['name']
+                r_str = "ГОТОВ ✓" if info.get('ready') else "НЕ ГОТОВ"
+                lines.append(f"• ИГРОК [{pid.upper()}]: {cname} — [{r_str}]")
+            self.lobby_players_list.text = '\n'.join(lines)
+
+            total_p = 1 + len(self.lobby_players)
+            ready_p = (1 if self.my_ready else 0) + sum(1 for info in self.lobby_players.values() if info.get('ready'))
+
+            if self.lobby_countdown_active:
+                if ready_p >= total_p:
+                    self.lobby_timer_text.text = f"ВСЕ ГОТОВЫ! СТАРТ ЧЕРЕЗ: {max(0.0, self.lobby_countdown):.1f} СЕК."
+                    self.lobby_timer_text.color = color.lime
+                else:
+                    self.lobby_timer_text.text = f"ДО СТАРТА: {max(0.0, self.lobby_countdown):.1f} СЕК.  (Готовы: {ready_p}/{total_p})"
+                    self.lobby_timer_text.color = color.yellow
+            else:
+                self.lobby_timer_text.text = f"Ожидание первого голоса «Готов» ({ready_p}/{total_p})"
+                self.lobby_timer_text.color = rgb(180, 200, 230)
+
+            if self.my_ready:
+                self.btn_lobby_ready.text = "ВЫ ГОТОВЫ ✓ (ГОЛОС ПРИНЯТ)"
+                self.btn_lobby_ready.color = rgb(55, 85, 65)
+                self.btn_lobby_ready.highlight_color = rgb(55, 85, 65)
+            else:
+                self.btn_lobby_ready.text = "ГОТОВ К БОЮ! [ГОЛОСОВАТЬ]"
+                self.btn_lobby_ready.color = rgb(38, 120, 70)
+                self.btn_lobby_ready.highlight_color = rgb(55, 165, 95)
+
+    # ==========================================
+    # ДЕЙСТВИЯ ПОДКЛЮЧЕНИЯ К СЕТИ
     # ==========================================
     def toggle_code_typing(self):
         self.typing_code = not self.typing_code
@@ -353,10 +797,11 @@ class GameManager(Entity):
     def action_host_room(self):
         self.typing_code = False
         self.refresh_code_button()
+        self.lobby_players.clear()
         ok, info = self.net.host_room()
         if ok:
-            self.net_status_text.text = f"КОМНАТА СОЗДАНА! КОД КОМНАТЫ: {info}  (IP: {self.net.host_ip}:{self.net.port}) — Выберите персонажа!"
-            self.net_status_text.color = color.lime
+            self.open_multiplayer_lobby()
+            self.show_banner(f"КОМНАТА СОЗДАНА! КОД: {info}", color.lime, 3.5)
         else:
             self.net_status_text.text = f"Ошибка создания комнаты: {info}"
             self.net_status_text.color = color.red
@@ -368,10 +813,10 @@ class GameManager(Entity):
             self.net_status_text.text = "Сначала нажмите на поле 'КОД' и введите код комнаты друга!"
             self.net_status_text.color = color.orange
             return
+        self.lobby_players.clear()
         ok, info = self.net.join_by_code(self.room_code_input)
         if ok:
-            self.net_status_text.text = f"ПОДКЛЮЧЕНО К КОМНАТЕ [{info}]! Выберите выжившего [1 / 2 / 3] для входа в бой!"
-            self.net_status_text.color = color.lime
+            self.open_multiplayer_lobby()
         else:
             self.net_status_text.text = info
             self.net_status_text.color = color.red
@@ -379,12 +824,12 @@ class GameManager(Entity):
     def action_join_lan(self):
         self.typing_code = False
         self.refresh_code_button()
+        self.lobby_players.clear()
         ok, info = self.net.join_lan_auto()
         if ok:
             self.room_code_input = info
             self.refresh_code_button()
-            self.net_status_text.text = f"НАЙДЕНА LAN-КОМНАТА [{info}]! Выберите выжившего [1 / 2 / 3]!"
-            self.net_status_text.color = color.lime
+            self.open_multiplayer_lobby()
         else:
             self.net_status_text.text = f"Активные комнаты в LAN не найдены ({info})"
             self.net_status_text.color = color.orange
@@ -407,25 +852,37 @@ class GameManager(Entity):
             return 'VERY HARD', rgb(245, 55, 55)
         return 'HAHAHA (INSANE)', rgb(210, 50, 255)
 
-    def start_run(self, char_key):
-        self.typing_code = False
-        self.menu_panel.enabled = False
-        self.diorama_root.enabled = False
-        self.hud_panel.enabled = True
+    # ==========================================
+    # СТАРТ ЗАБЕГА И УПРАВЛЕНИЕ ЭТАПАМИ
+    # ==========================================
+    def start_run(self, char_key=None, seed=None, from_network=False):
+        chosen_char = char_key if char_key in SURVIVOR_CLASSES else self.selected_char
+        self.selected_char = chosen_char
+
+        self.show_screen('in_game')
         mouse.locked = True
 
         if is_valid(self.player):
             destroy(self.player)
-        if self.net.mode != 'client':
+
+        if seed is not None:
+            self.stage_seed = seed
+        elif self.net.mode != 'client':
             self.stage = 1
             self.stage_seed = random.randint(1000, 999999)
+
+        self.stage = 1
         self.elapsed_time = 0.0
-        self.player = Survivor(char_key)
+        self.player = Survivor(chosen_char)
         self.generate_stage(seed=self.stage_seed)
         self.running = True
 
-        if self.net.connected and self.net.mode == 'host':
-            self.net.broadcast({'type': 'stage_sync', 'stage': self.stage, 'seed': self.stage_seed})
+        if self.net.connected and self.net.mode == 'host' and not from_network:
+            self.net.broadcast({
+                'type': 'lobby_start_run',
+                'stage': self.stage,
+                'seed': self.stage_seed
+            })
 
     def generate_stage(self, seed=None):
         if seed is None:
@@ -512,10 +969,25 @@ class GameManager(Entity):
                 destroy(rp)
         self.remote_players.clear()
 
-        self.diorama_root.enabled = True
-        self.reset_menu_camera()
-        self.menu_panel.enabled = True
-        self.show_banner('ВЫ ПОГИБЛИ! ВЫБЕРИТЕ ВЫЖИВШЕГО ДЛЯ НОВОГО ЗАБЕГА', color.red, 999.0)
+        for e in list(self.enemies):
+            if is_valid(e):
+                destroy(e)
+        self.enemies.clear()
+        for obj in list(self.stage_entities):
+            if obj and not obj.is_empty():
+                destroy(obj)
+        self.stage_entities.clear()
+        self.obstacles.clear()
+
+        self.my_ready = False
+        self.lobby_countdown_active = False
+        self.lobby_countdown = 60.0
+        for pinfo in self.lobby_players.values():
+            pinfo['ready'] = False
+
+        self.show_screen('lobby')
+        self.broadcast_lobby_state()
+        self.show_banner('ВЫ ПОГИБЛИ! ПОДГОТОВЬТЕСЬ К НОВОМУ ЗАБЕГУ В ЛОББИ', color.red, 4.5)
 
     # ==========================================
     # ОБРАБОТКА СЕТЕВЫХ ПАКЕТОВ
@@ -528,18 +1000,70 @@ class GameManager(Entity):
                 self.net.my_id = msg.get('player_id', 'p2')
                 self.net.room_code = msg.get('room_code', self.net.room_code)
                 self.show_banner(f"ПОДКЛЮЧЕНО К КОМНАТЕ {self.net.room_code}!", color.lime, 3.0)
+                self.broadcast_lobby_state()
+                self.update_lobby_ui()
 
             elif mtype == 'client_joined':
                 pid = msg.get('player_id')
-                self.show_banner(f"ИГРОК [{pid.upper()}] ПОДКЛЮЧИЛСЯ К КОМНАТЕ!", color.cyan, 3.0)
+                if pid and pid != self.net.my_id:
+                    self.lobby_players.setdefault(pid, {'char_key': 'commando', 'ready': False})
+                self.show_banner(f"ИГРОК [{str(pid).upper()}] ВОШЁЛ В ЛОББИ!", color.cyan, 3.0)
+                self.broadcast_lobby_state()
+                if self.net.mode == 'host' and self.lobby_countdown_active:
+                    self.net.broadcast({
+                        'type': 'lobby_timer_sync',
+                        'active': self.lobby_countdown_active,
+                        'countdown': round(self.lobby_countdown, 2)
+                    })
                 if self.running and self.net.mode == 'host':
-                    self.net.broadcast({'type': 'stage_sync', 'stage': self.stage, 'seed': self.stage_seed})
+                    self.net.broadcast({'type': 'lobby_start_run', 'stage': self.stage, 'seed': self.stage_seed})
+                self.refresh_remote_lobby_models()
+                self.update_lobby_ui()
 
             elif mtype == 'player_left':
                 pid = msg.get('player_id')
+                self.lobby_players.pop(pid, None)
                 if pid in self.remote_players:
                     destroy(self.remote_players.pop(pid))
                 self.show_banner(f"ИГРОК [{str(pid).upper()}] ПОКИНУЛ ИГРУ", color.orange, 2.5)
+                self.evaluate_lobby_countdown()
+                self.refresh_remote_lobby_models()
+                self.update_lobby_ui()
+
+            elif mtype == 'disconnected':
+                self.lobby_players.clear()
+                if self.running:
+                    self.on_player_death()
+                self.show_screen('main')
+                self.show_banner("СОЕДИНЕНИЕ С ХОСТОМ ПОТЕРЯНО", color.red, 3.5)
+
+            elif mtype == 'lobby_state':
+                pid = msg.get('player_id')
+                if not pid or pid == self.net.my_id:
+                    continue
+                is_new_peer = pid not in self.lobby_players
+                self.lobby_players[pid] = {
+                    'char_key': msg.get('char_key', 'commando'),
+                    'ready': bool(msg.get('ready', False))
+                }
+                if is_new_peer:
+                    self.broadcast_lobby_state()
+                self.evaluate_lobby_countdown()
+                self.refresh_remote_lobby_models()
+                self.update_lobby_ui()
+
+            elif mtype == 'lobby_timer_sync':
+                if self.net.mode == 'client':
+                    self.lobby_countdown_active = bool(msg.get('active', False))
+                    self.lobby_countdown = float(msg.get('countdown', self.lobby_countdown))
+                    self.update_lobby_ui()
+
+            elif mtype == 'lobby_start_run':
+                # Каждый игрок начинает забег на СВОЁМ выбранном в лобби персонаже!
+                self.stage = msg.get('stage', 1)
+                self.stage_seed = msg.get('seed', 1001)
+                if not self.running:
+                    self.start_run(self.selected_char, seed=self.stage_seed, from_network=True)
 
             elif mtype == 'player_state':
                 pid = msg.get('player_id')
@@ -556,11 +1080,17 @@ class GameManager(Entity):
                 if not self.running or pid == self.net.my_id:
                     continue
                 col_tag = msg.get('col', 'cyan')
-                p_col = color.cyan if col_tag == 'cyan' else (
-                    color.yellow if col_tag == 'commando' else (
-                        color.magenta if col_tag == 'artificer' else rgb(255, 80, 100)
-                    )
-                )
+                net_col_map = {
+                    'cyan': color.cyan,
+                    'commando': color.yellow,
+                    'artificer': color.magenta,
+                    'huntress': rgb(255, 80, 100),
+                    'buzz': rgb(110, 255, 80),
+                    'v1': rgb(255, 230, 50),
+                    'sol': rgb(255, 110, 25),
+                    'gwen': rgb(95, 225, 255),
+                }
+                p_col = net_col_map.get(col_tag, color.cyan)
                 Projectile(
                     pos=msg['pos'], direction=msg['dir'], speed=msg['speed'],
                     damage=0, scale_val=msg['scale'], proj_color=p_col,
@@ -616,15 +1146,43 @@ class GameManager(Entity):
     def update(self):
         self.process_network()
 
+        if self.banner_timer > 0:
+            self.banner_timer -= time.dt
+            if self.banner_timer <= 0:
+                self.banner_text.text = ''
+
+        # Логика вращения подиума и отсчёта времени в лобби
         if not self.running:
             t = time.time()
-            self.preview_commando.rotation_y += 24 * time.dt
-            self.preview_artificer.rotation_y -= 24 * time.dt
-            self.preview_huntress.rotation_y += 24 * time.dt
+            self.local_preview_actor.rotation_y += 22 * time.dt
+            if self.local_preview_parts and self.local_preview_parts.get('halo'):
+                self.local_preview_parts['halo'].rotation_z += 90 * time.dt
+
+            for slot in self.remote_pedestals:
+                if slot['pedestal'].enabled:
+                    slot['actor'].rotation_y -= 18 * time.dt
+                    if slot['parts'] and slot['parts'].get('halo'):
+                        slot['parts']['halo'].rotation_z += 90 * time.dt
+
             self.menu_crystal.rotation_y += 55 * time.dt
-            self.menu_crystal.y = 2.4 + math.sin(t * 2.5) * 0.2
-            if self.artificer_parts.get('halo'):
-                self.artificer_parts['halo'].rotation_z += 90 * time.dt
+            self.menu_crystal.y = 3.3 + math.sin(t * 2.5) * 0.18
+
+            if self.menu_state == 'lobby' and self.net.connected and self.lobby_countdown_active:
+                self.lobby_countdown = max(0.0, self.lobby_countdown - time.dt)
+                self.update_lobby_ui()
+
+                if self.net.mode == 'host':
+                    self.lobby_sync_timer -= time.dt
+                    if self.lobby_sync_timer <= 0:
+                        self.lobby_sync_timer = 0.5
+                        self.net.broadcast({
+                            'type': 'lobby_timer_sync',
+                            'active': True,
+                            'countdown': round(self.lobby_countdown, 2)
+                        })
+                    if self.lobby_countdown <= 0.0:
+                        self.lobby_countdown_active = False
+                        self.start_run(self.selected_char)
             return
 
         if not is_valid(self.player):
@@ -665,11 +1223,6 @@ class GameManager(Entity):
                             'pos': [round(spawn_pos.x, 2), 0, round(spawn_pos.z, 2)],
                             'coeff': round(coeff, 2)
                         })
-
-        if self.banner_timer > 0:
-            self.banner_timer -= time.dt
-            if self.banner_timer <= 0:
-                self.banner_text.text = ''
 
         p = self.player
         if self.net.connected:

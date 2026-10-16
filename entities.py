@@ -99,13 +99,60 @@ class ArrowRainZone(Entity):
                         e.take_damage(self.tick_dmg)
 
 
+class HallowedMistZone(Entity):
+    """Купол Священного Тумана Гвен: исцеляет игрока внутри и наносит урон врагам"""
+    def __init__(self, center_pos, tick_dmg):
+        super().__init__(position=Vec3(center_pos[0], 0.1, center_pos[2]))
+        self.tick_dmg = tick_dmg
+        self.duration = 4.5
+        self.tick_timer = 0.0
+        self.radius = 7.2
+        self.ring = Entity(
+            parent=self,
+            model='sphere',
+            scale=(self.radius * 2, 0.18, self.radius * 2),
+            color=rgb(75, 210, 255, 75),
+            unlit=True
+        )
+        self.dome = Entity(
+            parent=self,
+            model='sphere',
+            scale=(self.radius * 2, 4.5, self.radius * 2),
+            color=rgb(110, 180, 255, 35),
+            double_sided=True,
+            unlit=True
+        )
+
+    def update(self):
+        game = ctx.game
+        if not game or not game.running or self.is_empty():
+            return
+        self.duration -= time.dt
+        self.ring.rotation_y += 45 * time.dt
+        if self.duration <= 0:
+            destroy(self)
+            return
+
+        self.tick_timer -= time.dt
+        if self.tick_timer <= 0:
+            self.tick_timer = 0.4
+            my_pos = Vec3(*self.position)
+            if is_valid(game.player) and distance_2d(Vec3(*game.player.position), my_pos) <= self.radius:
+                game.player.hp = min(float(game.player.max_hp), game.player.hp + 4.5)
+            for e in list(game.enemies):
+                if is_valid(e) and distance_2d(Vec3(*e.position), my_pos) <= self.radius:
+                    e.take_damage(self.tick_dmg)
+                    VisualFX(Vec3(*e.position) + Vec3(0, 1, 0), rgb(130, 230, 255), 1.4, 0.2)
+
+
 # ==========================================
 # 2. УНИВЕРСАЛЬНЫЕ СНАРЯДЫ
 # ==========================================
 class Projectile(Entity):
     def __init__(
         self, pos, direction, speed, damage, scale_val, proj_color,
-        is_player=True, aoe=0.0, pierce=False, bounces=0, homing=False, is_remote=False
+        is_player=True, aoe=0.0, pierce=False, bounces=0, homing=False,
+        is_remote=False, lifesteal=0.0
     ):
         super().__init__(
             model='sphere',
@@ -124,6 +171,7 @@ class Projectile(Entity):
         self.pierce = pierce
         self.bounces = bounces
         self.homing = homing
+        self.lifesteal = lifesteal
         self.hit_memory = set()
         self.lifetime = 3.4
         self.is_destroyed = False
@@ -191,7 +239,7 @@ class Projectile(Entity):
                                     next_target = other
                         if next_target:
                             next_pos = Vec3(*next_target.position) + Vec3(0, next_target.hit_height, 0)
-                            LightningBeam(my_pos, next_pos, color.cyan, 0.22)
+                            LightningBeam(my_pos, next_pos, self.color, 0.22)
                             self.direction = (next_pos - my_pos).normalized()
                             return
                         else:
@@ -224,6 +272,9 @@ class Projectile(Entity):
             VisualFX(proj_pos, rgb(255, 45, 70), max_scale=2.2, duration=0.25)
 
         target.take_damage(dmg)
+        if self.lifesteal > 0:
+            p.hp = min(float(p.max_hp), p.hp + self.lifesteal)
+
         VisualFX(proj_pos, self.color, max_scale=1.3 if self.aoe == 0 else self.aoe * 1.5, duration=0.22)
 
         if self.aoe > 0:
@@ -286,6 +337,7 @@ class Survivor(Entity):
         self.dash_timer = 0.0
         self.barrage_shots = 0
         self.barrage_timer = 0.0
+        self.dragon_install_timer = 0.0
         self.shoot_side = 0
         self.is_moving = False
         self.net_sync_timer = 0.0
@@ -299,16 +351,17 @@ class Survivor(Entity):
 
     @property
     def dash_cooldown(self):
-        """Совместимость с проверками кулдауна рывка в UI"""
         return self.shift_cd
 
     @property
     def move_speed(self):
-        return self.base_speed * (1.0 + 0.14 * self.items['hoof'])
+        di_mult = 1.45 if self.dragon_install_timer > 0 else 1.0
+        return self.base_speed * (1.0 + 0.14 * self.items['hoof']) * di_mult
 
     @property
     def fire_rate(self):
-        return self.base_fire_rate * (1.0 + 0.15 * self.items['syringe'])
+        di_mult = 1.65 if self.dragon_install_timer > 0 else 1.0
+        return self.base_fire_rate * (1.0 + 0.15 * self.items['syringe']) * di_mult
 
     @property
     def block_chance(self):
@@ -355,6 +408,12 @@ class Survivor(Entity):
         self.m2_cd = max(0.0, self.m2_cd - time.dt)
         self.shift_cd = max(0.0, self.shift_cd - time.dt)
         self.r_cd = max(0.0, self.r_cd - time.dt)
+
+        if self.dragon_install_timer > 0:
+            self.dragon_install_timer -= time.dt
+            self.hp = min(float(self.max_hp), self.hp + 6.0 * time.dt)
+            if random.random() < 0.25:
+                VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(255, 110, 20), 2.2, 0.18)
 
         if held_keys['shift'] and self.shift_cd <= 0:
             self.use_shift_skill()
@@ -445,9 +504,21 @@ class Survivor(Entity):
     def fire_primary_projectile(self, damage_mult=1.0, col_override=None):
         aim_dir = camera.forward
         spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 0.95
-        default_col = color.yellow if self.char_key == 'commando' else (color.magenta if self.char_key == 'artificer' else rgb(255, 80, 100))
+        color_map = {
+            'commando': color.yellow,
+            'artificer': color.magenta,
+            'huntress': rgb(255, 80, 100),
+            'buzz': rgb(110, 255, 80),
+            'v1': rgb(255, 230, 50),
+            'sol': rgb(255, 110, 25),
+            'gwen': rgb(95, 225, 255)
+        }
+        default_col = color_map.get(self.char_key, color.yellow)
         proj_col = col_override if col_override else default_col
         col_name = 'cyan' if col_override else self.char_key
+
+        is_pierce = (self.char_key == 'sol')
+        steal = 1.6 if self.char_key in ('v1', 'gwen') else 0.0
 
         Projectile(
             pos=spawn_pos,
@@ -458,20 +529,31 @@ class Survivor(Entity):
             proj_color=proj_col,
             is_player=True,
             aoe=self.proj_aoe,
-            homing=(self.char_key == 'huntress')
+            pierce=is_pierce,
+            homing=(self.char_key == 'huntress'),
+            lifesteal=steal
         )
-        self._broadcast_shot(spawn_pos, aim_dir, self.proj_speed, self.base_damage * damage_mult, self.proj_scale, col_name, self.proj_aoe, False, 0, self.char_key == 'huntress')
+        self._broadcast_shot(
+            spawn_pos, aim_dir, self.proj_speed, self.base_damage * damage_mult,
+            self.proj_scale, col_name, self.proj_aoe, is_pierce, 0, self.char_key == 'huntress'
+        )
 
-        arm = self.parts['left_arm'] if self.shoot_side % 2 == 0 else self.parts['right_arm']
-        self.shoot_side += 1
-        arm.rotation_x = -24
-        arm.animate_rotation_x(0, duration=0.11)
+        if self.char_key in ('sol', 'gwen', 'buzz', 'v1'):
+            arm = self.parts['right_arm']
+            arm.rotation_x = -48 if self.char_key in ('sol', 'gwen') else -26
+            arm.animate_rotation_x(0, duration=0.14)
+        else:
+            arm = self.parts['left_arm'] if self.shoot_side % 2 == 0 else self.parts['right_arm']
+            self.shoot_side += 1
+            arm.rotation_x = -24
+            arm.animate_rotation_x(0, duration=0.11)
 
     def use_m1_skill(self):
         self.m1_cd = 1.0 / self.fire_rate
         self.fire_primary_projectile()
 
     def use_m2_skill(self):
+        game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
         self.m2_cd = skills['m2']['cd']
         spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 1.1
@@ -498,6 +580,46 @@ class Survivor(Entity):
                 proj_color=color.cyan, is_player=True, bounces=5, homing=True
             )
             self._broadcast_shot(spawn_pos, aim_dir, 48.0, self.base_damage * 2.2, 0.55, 'cyan', 0.0, False, 5, True)
+        elif self.char_key == 'buzz':
+            # Hyper-Beam: пробивной красно-зелёный лазер с AoE
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=74.0,
+                damage=self.base_damage * 2.9, scale_val=0.55,
+                proj_color=color.red, is_player=True, aoe=4.2, pierce=True
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 74.0, self.base_damage * 2.9, 0.55, 'sol', 4.2, True, 0, False)
+        elif self.char_key == 'v1':
+            # Marksman Coin Ricoshot: золотая монета с рикошетом и вампиризмом
+            VisualFX(spawn_pos + Vec3(0, 0.6, 0), color.gold, 1.8, 0.25)
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=85.0,
+                damage=self.base_damage * 2.5, scale_val=0.45,
+                proj_color=color.gold, is_player=True, bounces=4, homing=True, lifesteal=6.0
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 85.0, self.base_damage * 2.5, 0.45, 'v1', 0.0, False, 4, True)
+        elif self.char_key == 'sol':
+            # Volcanic Viper: огненный апперкот в прыжке
+            self.vel_y = 14.8
+            self.grounded = False
+            my_pos = Vec3(*self.position)
+            VisualFX(my_pos + Vec3(0, 1.5, 0), rgb(255, 90, 20), 6.8, 0.35)
+            for e in list(game.enemies):
+                if is_valid(e) and distance(Vec3(*e.position), my_pos) <= 6.5:
+                    e.take_damage(self.base_damage * 2.6)
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=46.0,
+                damage=self.base_damage * 2.0, scale_val=0.75,
+                proj_color=rgb(255, 110, 20), is_player=True, aoe=4.5, pierce=True
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 46.0, self.base_damage * 2.0, 0.75, 'sol', 4.5, True, 0, False)
+        elif self.char_key == 'gwen':
+            # Center Snip: гигантский пробивной разрез по центру с исцелением
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=64.0,
+                damage=self.base_damage * 3.1, scale_val=0.68,
+                proj_color=rgb(140, 235, 255), is_player=True, aoe=3.2, pierce=True, lifesteal=5.0
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 64.0, self.base_damage * 3.1, 0.68, 'gwen', 3.2, True, 0, False)
 
     def use_shift_skill(self):
         game = ctx.game
@@ -525,6 +647,36 @@ class Survivor(Entity):
             resolved = game.resolve_horizontal_collision(target_pos, 0.72, self.y)
             self.position = Vec3(clamp(resolved.x, -56, 56), max(0.0, target_pos.y), clamp(resolved.z, -56, 56))
             VisualFX(Vec3(*self.position) + Vec3(0, 1, 0), color.cyan, 2.4, 0.3)
+        elif self.char_key == 'buzz':
+            # To Infinity & Beyond: высокий полёт на реактивном ранце
+            self.vel_y = 18.5
+            self.grounded = False
+            self.dash_vector = self.forward * 24.0
+            self.dash_timer = 0.36
+            VisualFX(my_pos, rgb(125, 255, 80), 4.2, 0.35)
+        elif self.char_key == 'v1':
+            # Slam Dash: сверхбыстрый рывок с поглощением крови врагов поблизости
+            self.dash_vector = self.forward * 35.0
+            self.dash_timer = 0.18
+            for e in list(game.enemies):
+                if is_valid(e) and distance(Vec3(*e.position), my_pos) <= 6.0:
+                    e.take_damage(self.base_damage * 1.5)
+                    self.hp = min(float(self.max_hp), self.hp + 8.0)
+                    VisualFX(Vec3(*e.position) + Vec3(0, 1, 0), color.red, 2.2, 0.25)
+        elif self.char_key == 'sol':
+            # Fafnir Lunge: огненный таран вперёд
+            self.dash_vector = self.forward * 27.0
+            self.dash_timer = 0.26
+            VisualFX(my_pos + self.forward * 2.5 + Vec3(0, 1, 0), rgb(255, 100, 20), 5.5, 0.32)
+            for e in list(game.enemies):
+                if is_valid(e) and distance(Vec3(*e.position), my_pos + self.forward * 2.5) <= 6.5:
+                    e.take_damage(self.base_damage * 2.2)
+        elif self.char_key == 'gwen':
+            # Hallowed Mist: рывок и постановка защитного купола Священного Тумана
+            self.dash_vector = self.forward * 20.0
+            self.dash_timer = 0.22
+            mist = HallowedMistZone(my_pos + self.forward * 3.0, self.base_damage * 0.65)
+            game.stage_entities.append(mist)
 
     def use_r_skill(self):
         game = ctx.game
@@ -550,6 +702,65 @@ class Survivor(Entity):
             zone_pos = my_pos + self.forward * 12.0
             zone = ArrowRainZone(zone_pos, self.base_damage * 0.75)
             game.stage_entities.append(zone)
+        elif self.char_key == 'buzz':
+            # Star Command Salvo: веер из 6 самонаводящихся фотонных ракет
+            spawn_pos = my_pos + Vec3(0, 1.8, 0)
+            for i in range(6):
+                ang = math.radians(-30 + i * 12)
+                d = Vec3(
+                    self.forward.x * math.cos(ang) - self.forward.z * math.sin(ang),
+                    0.15,
+                    self.forward.x * math.sin(ang) + self.forward.z * math.cos(ang)
+                ).normalized()
+                Projectile(
+                    pos=spawn_pos, direction=d, speed=46.0,
+                    damage=self.base_damage * 2.1, scale_val=0.42,
+                    proj_color=rgb(130, 255, 90), is_player=True, aoe=3.8, homing=True
+                )
+                self._broadcast_shot(spawn_pos, d, 46.0, self.base_damage * 2.1, 0.42, 'buzz', 3.8, False, 0, True)
+        elif self.char_key == 'v1':
+            # Electric Railcannon: мгновенный рельсотрон + цепной разряд + BLOOD IS FUEL
+            aim_dir = camera.forward
+            start_p = my_pos + Vec3(0, 1.55, 0)
+            end_p = start_p + aim_dir * 45.0
+            LightningBeam(start_p, end_p, color.cyan, 0.45)
+            Projectile(
+                pos=start_p, direction=aim_dir, speed=95.0,
+                damage=self.base_damage * 3.8, scale_val=0.65,
+                proj_color=color.cyan, is_player=True, aoe=4.5, pierce=True, lifesteal=12.0
+            )
+            self._broadcast_shot(start_p, aim_dir, 95.0, self.base_damage * 3.8, 0.65, 'cyan', 4.5, True, 0, False)
+            for e in list(game.enemies):
+                if is_valid(e) and distance(Vec3(*e.position), my_pos) <= 20.0:
+                    LightningBeam(start_p, Vec3(*e.position) + Vec3(0, 1.2, 0), color.yellow, 0.22)
+                    e.take_damage(self.base_damage * 1.8)
+                    self.hp = min(float(self.max_hp), self.hp + 5.0)
+            game.show_banner('ULTRARICOSHOT :: BLOOD IS FUEL!', color.yellow, 1.8)
+        elif self.char_key == 'sol':
+            # DRAGON INSTALL + Tyrant Rave
+            self.dragon_install_timer = 6.0
+            VisualFX(my_pos + Vec3(0, 1.5, 0), rgb(255, 60, 20), 11.0, 0.45)
+            for e in list(game.enemies):
+                if is_valid(e) and distance(Vec3(*e.position), my_pos) <= 11.0:
+                    e.take_damage(self.base_damage * 3.4)
+            game.show_banner('DRAGON INSTALL :: LET IT OUT!', rgb(255, 120, 30), 2.5)
+        elif self.char_key == 'gwen':
+            # Needlework: веер из 5 гигантских пронзающих призрачных игл
+            spawn_pos = my_pos + Vec3(0, 1.6, 0)
+            base_f = camera.forward
+            for angle_deg in (-16, -8, 0, 8, 16):
+                rad = math.radians(angle_deg)
+                d = Vec3(
+                    base_f.x * math.cos(rad) - base_f.z * math.sin(rad),
+                    base_f.y,
+                    base_f.x * math.sin(rad) + base_f.z * math.cos(rad)
+                ).normalized()
+                Projectile(
+                    pos=spawn_pos, direction=d, speed=62.0,
+                    damage=self.base_damage * 2.4, scale_val=0.46,
+                    proj_color=rgb(110, 225, 255), is_player=True, aoe=2.5, pierce=True, lifesteal=4.0
+                )
+                self._broadcast_shot(spawn_pos, d, 62.0, self.base_damage * 2.4, 0.46, 'gwen', 2.5, True, 0, False)
 
     def take_damage(self, amount):
         game = ctx.game
@@ -682,7 +893,6 @@ class Enemy(Entity):
         self.hp_bar = Entity(parent=self.hp_bar_bg, model='quad', scale=(1, 1), z=-0.01, color=color.red, unlit=True)
 
     def _get_nearest_target(self, game):
-        """Выбирает ближайшего выжившего (локального или сетевого)"""
         my_pos = Vec3(*self.position)
         candidates = []
         if is_valid(game.player):
