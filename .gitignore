@@ -1,0 +1,19 @@
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Локальные сохранения прогресса и логов Ursina
+save_logbook.json
+*.log
+
+# Настройки IDE и ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
