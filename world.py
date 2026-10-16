@@ -1,9 +1,9 @@
 from ursina import *
 import math
 import random
-from config import ctx, rgb, is_valid, ITEM_POOL, STAGE_PALETTES, PROGRESS
+from config import ctx, rgb, is_valid, ITEM_POOL, BOSS_TYPES, STAGE_PALETTES, PROGRESS
 from models import build_item_mesh, build_map_structure, build_skybox
-from entities import VisualFX
+from entities import VisualFX, Projectile
 
 
 class ItemDrop(Entity):
@@ -92,8 +92,30 @@ class Chest(Entity):
         self.lid.animate_rotation((-70, 0, 0), duration=0.28)
         my_pos = Vec3(*self.position)
         VisualFX(my_pos + Vec3(0, 1.0, 0), color.gold, 3.0, 0.35)
-        if ctx.game:
-            ctx.game.spawn_item_drop(my_pos, item_key=item_key, broadcast=False)
+
+        game = ctx.game
+        if game:
+            game.spawn_item_drop(my_pos, item_key=item_key, broadcast=False)
+            # Bundle of Fireworks: выпускает самонаводящиеся ракеты из открытого сундука
+            if is_valid(game.player):
+                fw_stacks = game.player.items.get('bundle_fireworks', 0)
+                if fw_stacks > 0:
+                    rockets = min(16, 4 + fw_stacks * 3)
+                    for i in range(rockets):
+                        ang = (i / float(rockets)) * math.pi * 2
+                        d = Vec3(math.cos(ang) * 0.5, 1.0, math.sin(ang) * 0.5).normalized()
+                        Projectile(
+                            pos=my_pos + Vec3(0, 1.6, 0),
+                            direction=d,
+                            speed=42.0,
+                            damage=game.player.base_damage * 1.35,
+                            scale_val=0.30,
+                            proj_color=rgb(255, 95, 215),
+                            is_player=True,
+                            aoe=2.2,
+                            homing=True,
+                            can_proc=False
+                        )
 
     def update(self):
         game = ctx.game
@@ -183,17 +205,18 @@ class Teleporter(Entity):
             color=color.red, billboard=True
         )
 
-    def activate_teleporter(self, from_network=False):
+    def activate_teleporter(self, boss_type=None, from_network=False):
         if self.state != 'idle':
             return
         game = ctx.game
         self.state = 'charging'
         self.zone_ring.enabled = True
         my_pos = Vec3(*self.position)
-        game.spawn_boss(my_pos + Vec3(9, 0, 9), from_network=from_network)
-        game.show_banner('ТЕЛЕПОРТ АКТИВИРОВАН! ПОБЕДИТЕ КАМЕННОГО ТИТАНА!', color.red, 3.2)
+        chosen_boss = boss_type if boss_type in BOSS_TYPES else random.choice(BOSS_TYPES)
+        game.spawn_boss(my_pos + Vec3(9, 0, 9), boss_type=chosen_boss, from_network=from_network)
+        game.show_banner('ТЕЛЕПОРТ АКТИВИРОВАН! ПОБЕДИТЕ БОССА ТЕЛЕПОРТА!', color.red, 3.2)
         if not from_network and getattr(ctx, 'net', None) and ctx.net.connected:
-            ctx.net.broadcast({'type': 'tp_activate'})
+            ctx.net.broadcast({'type': 'tp_activate', 'boss_type': chosen_boss})
 
     def update(self):
         game = ctx.game
@@ -276,9 +299,9 @@ def build_stage_world(stage_num, seed=None):
         obstacles_list.extend(local_obs)
 
     chest_cost = int(25 * (1.25 ** (stage_num - 1)))
-    for idx in range(9):
-        cx = random.uniform(-44, 44)
-        cz = random.uniform(-44, 44)
+    for idx in range(13):
+        cx = random.uniform(-46, 46)
+        cz = random.uniform(-46, 46)
         if abs(cx) < 6 and abs(cz) < 6:
             continue
         chest = Chest(Vec3(cx, 0, cz), chest_cost, chest_id=idx)

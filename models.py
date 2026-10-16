@@ -1,7 +1,7 @@
 from ursina import *
 import math
 import random
-from config import rgb, SURVIVOR_CLASSES
+from config import rgb, ITEM_POOL, SURVIVOR_CLASSES
 
 # ==========================================
 # 1. ПРОЦЕДУРНЫЙ КОСМИЧЕСКИЙ СКАЙБОКС (PETRICHOR V)
@@ -9,10 +9,8 @@ from config import rgb, SURVIVOR_CLASSES
 def build_skybox(parent_entity, palette):
     """Создает многослойное небо со звездами, расколотой луной, планетой с кольцами и туманностями"""
     sky_root = Entity(parent=parent_entity)
-    # Отключаем влияние тумана на скайбокс, чтобы луна, планеты и звёзды были чётко видны
     sky_root.setFogOff()
 
-    # Далёкие облака туманностей по горизонту (вокруг карты, не перекрывая верх и камеру)
     random.seed(42)
     for i in range(14):
         ang = (i / 14.0) * math.pi * 2
@@ -30,7 +28,6 @@ def build_skybox(parent_entity, palette):
             unlit=True
         )
 
-    # Звёздный купол (140 разноцветных светил)
     for _ in range(140):
         theta = random.uniform(0, math.pi * 2)
         phi = random.uniform(0.12, math.pi * 0.48)
@@ -52,7 +49,6 @@ def build_skybox(parent_entity, palette):
     # Расколотая Луна Petrichor V с поясом астероидов
     moon_pivot = Entity(parent=sky_root, position=(65, 78, 125), rotation=(-15, -30, 20))
     Entity(parent=moon_pivot, model='sphere', scale=28, color=palette['moon'], unlit=True)
-    # Осколки расколотой луны
     for i in range(14):
         ang = (i / 14.0) * math.pi * 2
         dist = random.uniform(19, 30)
@@ -65,7 +61,6 @@ def build_skybox(parent_entity, palette):
             color=palette['moon'],
             unlit=True
         )
-    # Энергетическое кольцо вокруг луны
     Entity(parent=moon_pivot, model='diamond', scale=(52, 0.9, 52), color=palette['accent'], unlit=True)
 
     # Далёкий газовый гигант с двойным кольцом
@@ -86,7 +81,6 @@ def build_survivor_mesh(parent_entity, char_key):
     root = Entity(parent=parent_entity, y=0)
     parts = {'root': root, 'halo': None, 'bow': None}
 
-    # --- НОГИ С СУСТАВАМИ И БОТИНКАМИ ---
     left_hip = Entity(parent=root, position=(-0.22, 0.86, 0))
     right_hip = Entity(parent=root, position=(0.22, 0.86, 0))
     for hip in (left_hip, right_hip):
@@ -99,7 +93,6 @@ def build_survivor_mesh(parent_entity, char_key):
     parts['left_leg'] = left_hip
     parts['right_leg'] = right_hip
 
-    # --- ТОРС, НАГРУДНАЯ БРОНЯ И РЕАКТИВНЫЙ РАНЕЦ ---
     torso = Entity(parent=root, position=(0, 1.26, 0))
     Entity(parent=torso, model='cube', scale=(0.58, 0.22, 0.38), y=-0.32, color=rgb(38, 42, 52))
     Entity(parent=torso, model='cube', scale=(0.18, 0.12, 0.42), y=-0.32, color=cfg['visor_color'], unlit=True)
@@ -113,7 +106,6 @@ def build_survivor_mesh(parent_entity, char_key):
         Entity(parent=thruster, model='sphere', scale=0.65, y=-0.45, color=cfg['visor_color'], unlit=True)
     parts['torso'] = torso
 
-    # --- ШЛЕМ И КЛАССОВЫЕ ДЕТАЛИ ---
     head = Entity(parent=torso, position=(0, 0.58, 0))
     if char_key != 'v1':
         Entity(parent=head, model='sphere', scale=(0.54, 0.58, 0.56), color=cfg['armor_color'])
@@ -181,7 +173,6 @@ def build_survivor_mesh(parent_entity, char_key):
         Entity(parent=torso, model='diamond', scale=(1.10, 0.65, 1.10), position=(0, -0.36, 0), color=rgb(32, 28, 46))
         Entity(parent=torso, model='diamond', scale=(1.16, 0.22, 1.16), position=(0, -0.54, 0), color=rgb(195, 240, 255), unlit=True)
 
-    # --- РУКИ И ОРУЖИЕ ---
     left_shoulder = Entity(parent=torso, position=(-0.48, 0.25, 0))
     right_shoulder = Entity(parent=torso, position=(0.48, 0.25, 0))
 
@@ -207,12 +198,10 @@ def build_survivor_mesh(parent_entity, char_key):
             rev = Entity(parent=sh, model='cube', scale=(0.12, 0.18, 0.62), position=(0, -0.08, 0.58), color=rgb(35, 42, 58))
             Entity(parent=rev, model='cube', scale=(0.65, 0.38, 0.95), position=(0, 0.35, 0.15), color=color.cyan, unlit=True)
         elif char_key == 'sol' and idx == 1:
-            # Огненный меч Junkyard Dog Mk.III привязан к плечу (без искажения масштаба)
             sword = Entity(parent=sh, position=(0, -0.12, 0.52), rotation_x=15)
             Entity(parent=sword, model='cube', scale=(0.10, 0.22, 1.15), z=0.45, color=rgb(200, 35, 35))
             Entity(parent=sword, model='cube', scale=(0.12, 0.08, 1.10), position=(0, 0.08, 0.45), color=rgb(255, 165, 30), unlit=True)
         elif char_key == 'gwen' and idx == 1:
-            # Ножницы Гвен направлены вперёд и привязаны к плечу без искажения пропорций
             scis = Entity(parent=sh, position=(0, -0.12, 0.48))
             Entity(parent=scis, model='diamond', scale=(0.06, 0.16, 1.15), position=(0, 0.10, 0.45), rotation_x=-14, color=rgb(110, 225, 255), unlit=True)
             Entity(parent=scis, model='diamond', scale=(0.06, 0.16, 1.15), position=(0, -0.06, 0.45), rotation_x=14, color=rgb(195, 245, 255), unlit=True)
@@ -224,7 +213,7 @@ def build_survivor_mesh(parent_entity, char_key):
 
 
 # ==========================================
-# 3. ДЕТАЛИЗИРОВАННЫЕ МОДЕЛИ ВРАГОВ
+# 3. МОДЕЛИ 7 ОБЫЧНЫХ ВРАГОВ И 3 БОССОВ
 # ==========================================
 def build_enemy_mesh(parent_entity, enemy_type):
     root = Entity(parent=parent_entity)
@@ -288,6 +277,111 @@ def build_enemy_mesh(parent_entity, enemy_type):
         parts['ring1'] = ring1
         parts['ring2'] = ring2
 
+    elif enemy_type == 'beetle':
+        # Панцирный жук с рогом и лапками
+        shell_col = rgb(95, 62, 42)
+        horn_col = rgb(225, 175, 85)
+        torso = Entity(parent=root, position=(0, 0.65, 0))
+        Entity(parent=torso, model='sphere', scale=(1.15, 0.72, 1.45), color=shell_col)
+        Entity(parent=torso, model='diamond', scale=(0.85, 0.35, 1.15), y=0.28, color=rgb(135, 88, 55))
+        horn = Entity(parent=torso, model='diamond', scale=(0.24, 0.75, 0.35), position=(0, 0.22, 0.75), rotation_x=55, color=horn_col)
+        Entity(parent=torso, model='sphere', scale=0.15, position=(-0.26, 0.12, 0.62), color=color.orange, unlit=True)
+        Entity(parent=torso, model='sphere', scale=0.15, position=(0.26, 0.12, 0.62), color=color.orange, unlit=True)
+
+        l_leg = Entity(parent=root, position=(-0.55, 0.45, 0))
+        r_leg = Entity(parent=root, position=(0.55, 0.45, 0))
+        for side, leg in ((-1, l_leg), (1, r_leg)):
+            for z_off in (-0.32, 0.32):
+                Entity(parent=leg, model='diamond', scale=(0.22, 0.58, 0.22), position=(side * 0.1, -0.2, z_off), rotation_z=side * 25, color=shell_col)
+        parts['torso'] = torso
+        parts['horn'] = horn
+        parts['left_leg'] = l_leg
+        parts['right_leg'] = r_leg
+
+    elif enemy_type == 'jellyfish':
+        # Парящая биолюминесцентная медуза
+        core = Entity(parent=root, position=(0, 2.2, 0))
+        Entity(parent=core, model='sphere', scale=(1.35, 1.05, 1.35), color=rgb(75, 225, 255, 185), unlit=True)
+        Entity(parent=core, model='sphere', scale=0.65, y=-0.05, color=rgb(245, 110, 255), unlit=True)
+        tentacles = Entity(parent=core, y=-0.35)
+        for i in range(6):
+            ang = (i / 6.0) * math.pi * 2
+            tx, tz = math.cos(ang) * 0.35, math.sin(ang) * 0.35
+            Entity(parent=tentacles, model='diamond', scale=(0.12, 1.25, 0.12), position=(tx, -0.5, tz), color=color.cyan, unlit=True)
+        parts['core'] = core
+        parts['tentacles'] = tentacles
+
+    elif enemy_type == 'golem':
+        # Тяжёлый Каменный Голем с лазерным глазом
+        st_col = rgb(78, 86, 98)
+        st_dark = rgb(52, 58, 68)
+        l_leg = Entity(parent=root, position=(-0.45, 1.0, 0))
+        r_leg = Entity(parent=root, position=(0.45, 1.0, 0))
+        for leg in (l_leg, r_leg):
+            Entity(parent=leg, model='cube', scale=(0.46, 1.0, 0.50), y=-0.5, color=st_dark)
+        parts['left_leg'] = l_leg
+        parts['right_leg'] = r_leg
+
+        torso = Entity(parent=root, position=(0, 1.85, 0))
+        Entity(parent=torso, model='cube', scale=(1.45, 1.35, 0.92), color=st_col)
+        head = Entity(parent=torso, model='cube', scale=(0.75, 0.58, 0.72), y=0.92, color=st_dark)
+        eye = Entity(parent=head, model='sphere', scale=0.35, position=(0, 0, 0.45), color=color.red, unlit=True)
+
+        l_arm = Entity(parent=torso, position=(-0.98, 0.35, 0))
+        r_arm = Entity(parent=torso, position=(0.98, 0.35, 0))
+        for arm in (l_arm, r_arm):
+            Entity(parent=arm, model='cube', scale=(0.42, 1.25, 0.42), y=-0.55, color=st_col)
+        parts['torso'] = torso
+        parts['eye'] = eye
+        parts['left_arm'] = l_arm
+        parts['right_arm'] = r_arm
+
+    elif enemy_type == 'imp':
+        # Демонический Бес Пустоты
+        imp_col = rgb(45, 22, 48)
+        crimson = rgb(245, 35, 70)
+        l_leg = Entity(parent=root, position=(-0.24, 0.78, 0))
+        r_leg = Entity(parent=root, position=(0.24, 0.78, 0))
+        for leg in (l_leg, r_leg):
+            Entity(parent=leg, model='diamond', scale=(0.24, 0.82, 0.24), y=-0.4, color=imp_col)
+        parts['left_leg'] = l_leg
+        parts['right_leg'] = r_leg
+
+        torso = Entity(parent=root, position=(0, 1.28, 0))
+        Entity(parent=torso, model='diamond', scale=(0.82, 1.15, 0.58), color=imp_col)
+        # Вертикальный багровый глаз-разрез на груди
+        Entity(parent=torso, model='diamond', scale=(0.18, 0.65, 0.25), z=0.22, color=crimson, unlit=True)
+        for side in (-1, 1):
+            Entity(parent=torso, model='diamond', scale=(0.16, 0.62, 0.16), position=(side * 0.28, 0.65, 0), rotation_z=side * -22, color=crimson, unlit=True)
+
+        l_arm = Entity(parent=torso, position=(-0.52, 0.22, 0))
+        r_arm = Entity(parent=torso, position=(0.52, 0.22, 0))
+        for arm in (l_arm, r_arm):
+            Entity(parent=arm, model='diamond', scale=(0.22, 0.75, 0.22), position=(0, -0.25, 0.22), rotation_x=-50, color=imp_col)
+            Entity(parent=arm, model='diamond', scale=(0.14, 0.42, 0.14), position=(0, -0.52, 0.42), rotation_x=-70, color=crimson, unlit=True)
+        parts['torso'] = torso
+        parts['left_arm'] = l_arm
+        parts['right_arm'] = r_arm
+
+    elif enemy_type == 'greater_wisp':
+        # Большой Огонёк с изумрудным пламенем и двумя руками-жаровнями
+        core = Entity(parent=root, position=(0, 2.7, 0))
+        Entity(parent=core, model='sphere', scale=1.25, color=rgb(65, 245, 110), unlit=True)
+        Entity(parent=core, model='diamond', scale=(0.85, 2.1, 0.85), y=0.5, color=rgb(175, 255, 120), unlit=True)
+
+        mask = Entity(parent=core, position=(0, 0, 0.52))
+        Entity(parent=mask, model='diamond', scale=(1.35, 1.55, 0.35), color=rgb(48, 54, 64))
+        Entity(parent=mask, model='diamond', scale=(0.35, 0.22, 0.38), position=(-0.26, 0.15, 0.05), color=color.lime, unlit=True)
+        Entity(parent=mask, model='diamond', scale=(0.35, 0.22, 0.38), position=(0.26, 0.15, 0.05), color=color.lime, unlit=True)
+
+        ring1 = Entity(parent=core, model='diamond', scale=(2.5, 0.22, 2.5), color=rgb(65, 72, 85))
+        l_orb = Entity(parent=core, model='sphere', scale=0.48, position=(-1.35, -0.1, 0.35), color=color.lime, unlit=True)
+        r_orb = Entity(parent=core, model='sphere', scale=0.48, position=(1.35, -0.1, 0.35), color=color.lime, unlit=True)
+        parts['core'] = core
+        parts['ring1'] = ring1
+        parts['l_orb'] = l_orb
+        parts['r_orb'] = r_orb
+
     elif enemy_type == 'boss':
         stone_dark = rgb(68, 74, 86)
         stone_light = rgb(98, 106, 120)
@@ -323,14 +417,67 @@ def build_enemy_mesh(parent_entity, enemy_type):
         parts['core'] = core
         parts['torso'] = torso
 
+    elif enemy_type == 'vagrant':
+        # БОСС 2: Wandering Vagrant (Гигантская небесная медуза)
+        bell = Entity(parent=root, position=(0, 4.2, 0))
+        Entity(parent=bell, model='sphere', scale=(4.2, 2.8, 4.2), color=rgb(55, 205, 255, 185), unlit=True)
+        Entity(parent=bell, model='diamond', scale=(4.6, 0.45, 4.6), y=-0.5, color=rgb(120, 245, 255), unlit=True)
+        core = Entity(parent=bell, model='sphere', scale=1.8, y=-0.3, color=rgb(255, 230, 80), unlit=True)
+
+        tentacles = Entity(parent=bell, y=-1.0)
+        for i in range(8):
+            ang = (i / 8.0) * math.pi * 2
+            tx, tz = math.cos(ang) * 1.35, math.sin(ang) * 1.35
+            Entity(
+                parent=tentacles, model='diamond',
+                scale=(0.38, 3.2, 0.38), position=(tx, -1.4, tz),
+                color=rgb(80, 235, 255), unlit=True
+            )
+        parts['bell'] = bell
+        parts['core'] = core
+        parts['tentacles'] = tentacles
+
+    elif enemy_type == 'overlord':
+        # БОСС 3: Imp Overlord (Повелитель Бесов)
+        void_dark = rgb(36, 18, 42)
+        crimson = rgb(245, 30, 65)
+
+        l_leg = Entity(parent=root, position=(-0.85, 1.5, 0))
+        r_leg = Entity(parent=root, position=(0.85, 1.5, 0))
+        for leg in (l_leg, r_leg):
+            Entity(parent=leg, model='diamond', scale=(0.85, 1.7, 0.85), y=-0.8, color=void_dark)
+        parts['left_leg'] = l_leg
+        parts['right_leg'] = r_leg
+
+        torso = Entity(parent=root, position=(0, 3.1, 0))
+        Entity(parent=torso, model='diamond', scale=(2.8, 3.1, 1.9), color=void_dark)
+        # Огромный багровый глаз Пустоты в груди
+        Entity(parent=torso, model='diamond', scale=(0.65, 1.95, 0.65), z=0.78, color=crimson, unlit=True)
+        for side in (-1, 1):
+            Entity(parent=torso, model='diamond', scale=(0.45, 1.8, 0.45), position=(side * 0.95, 1.65, 0), rotation_z=side * -25, color=crimson, unlit=True)
+
+        l_arm = Entity(parent=torso, position=(-1.85, 0.55, 0))
+        r_arm = Entity(parent=torso, position=(1.85, 0.55, 0))
+        for arm in (l_arm, r_arm):
+            Entity(parent=arm, model='diamond', scale=(0.85, 2.2, 0.85), y=-0.85, color=void_dark)
+            Entity(parent=arm, model='diamond', scale=(0.55, 1.2, 0.55), position=(0, -1.75, 0.35), rotation_x=-40, color=crimson, unlit=True)
+        parts['left_arm'] = l_arm
+        parts['right_arm'] = r_arm
+
+        crown = Entity(parent=torso, position=(0, 2.0, 0))
+        Entity(parent=crown, model='diamond', scale=(2.1, 0.35, 2.1), color=crimson, unlit=True)
+        parts['crown'] = crown
+        parts['torso'] = torso
+
     return parts
 
 
 # ==========================================
-# 4. 3D-МОДЕЛИ ВСЕХ 7 ПРЕДМЕТОВ
+# 4. 3D-МОДЕЛИ ВСЕХ 37 ПРЕДМЕТОВ
 # ==========================================
 def build_item_mesh(parent_entity, item_key):
     root = Entity(parent=parent_entity)
+    item_col = ITEM_POOL.get(item_key, {}).get('color', color.yellow)
 
     if item_key == 'syringe':
         tilt = Entity(parent=root, rotation_z=35)
@@ -364,7 +511,7 @@ def build_item_mesh(parent_entity, item_key):
         Entity(parent=root, model='cube', scale=(0.10, 0.28, 0.10), position=(0.18, 0.38, 0), rotation_z=-35, color=color.yellow, unlit=True)
 
     elif item_key == 'lens':
-        frame = Entity(parent=root, model='cube', scale=(0.75, 0.08, 0.10), y=0.10, color=rgb(40, 45, 55))
+        Entity(parent=root, model='cube', scale=(0.75, 0.08, 0.10), y=0.10, color=rgb(40, 45, 55))
         Entity(parent=root, model='sphere', scale=(0.32, 0.28, 0.14), position=(-0.20, 0.04, 0.04), color=rgb(255, 35, 75), unlit=True)
         Entity(parent=root, model='sphere', scale=(0.32, 0.28, 0.14), position=(0.20, 0.04, 0.04), color=rgb(255, 35, 75), unlit=True)
 
@@ -373,6 +520,52 @@ def build_item_mesh(parent_entity, item_key):
         Entity(parent=tilt, model='cube', scale=(0.06, 0.85, 0.06), color=color.gold, unlit=True)
         Entity(parent=tilt, model='diamond', scale=(0.38, 0.68, 0.12), y=0.12, color=rgb(90, 255, 150), unlit=True)
 
+    elif item_key == 'crowbar':
+        tilt = Entity(parent=root, rotation_z=30)
+        Entity(parent=tilt, model='cube', scale=(0.12, 0.85, 0.12), color=rgb(210, 45, 45))
+        Entity(parent=tilt, model='cube', scale=(0.32, 0.12, 0.12), position=(0.1, 0.42, 0), color=rgb(200, 210, 225))
+
+    elif item_key in ('tri_tip', 'harvester_scythe'):
+        tilt = Entity(parent=root, rotation_z=-35)
+        Entity(parent=tilt, model='diamond', scale=(0.28, 0.85, 0.14), y=0.12, color=item_col, unlit=True)
+        Entity(parent=tilt, model='cube', scale=(0.12, 0.35, 0.12), y=-0.35, color=rgb(60, 65, 75))
+
+    elif item_key in ('ap_rounds', 'backup_mag', 'bandolier'):
+        Entity(parent=root, model='cube', scale=(0.48, 0.58, 0.28), color=rgb(65, 75, 90))
+        for bx in (-0.14, 0.0, 0.14):
+            Entity(parent=root, model='diamond', scale=(0.12, 0.45, 0.12), position=(bx, 0.32, 0), color=item_col, unlit=True)
+
+    elif item_key in ('energy_drink', 'will_o_wisp', 'infusion'):
+        Entity(parent=root, model='cube', scale=(0.38, 0.68, 0.38), color=item_col, unlit=True)
+        Entity(parent=root, model='cube', scale=(0.42, 0.12, 0.42), y=0.35, color=color.white)
+
+    elif item_key in ('bison_steak', 'monster_tooth', 'leeching_seed'):
+        Entity(parent=root, model='sphere', scale=(0.62, 0.42, 0.48), color=item_col)
+        Entity(parent=root, model='sphere', scale=0.24, position=(0.12, 0.05, 0.18), color=color.white, unlit=True)
+
+    elif item_key in ('medkit', 'repulsion_armor', 'rose_buckler'):
+        Entity(parent=root, model='cube', scale=(0.64, 0.52, 0.24), color=rgb(235, 240, 250))
+        Entity(parent=root, model='cube', scale=(0.42, 0.14, 0.28), color=item_col, unlit=True)
+        Entity(parent=root, model='cube', scale=(0.14, 0.42, 0.28), color=item_col, unlit=True)
+
+    elif item_key in ('topaz_brooch', 'opal', 'focus_crystal', 'chronobauble'):
+        Entity(parent=root, model='diamond', scale=(0.58, 0.78, 0.58), color=item_col, unlit=True)
+        Entity(parent=root, model='diamond', scale=(0.82, 0.16, 0.82), color=color.gold, unlit=True)
+
+    elif item_key in ('kjaro_band', 'runald_band'):
+        Entity(parent=root, model='diamond', scale=(0.72, 0.22, 0.72), color=item_col, unlit=True)
+        Entity(parent=root, model='sphere', scale=0.32, y=0.22, color=color.white, unlit=True)
+
+    elif item_key in ('atg_missile', 'bundle_fireworks', 'behemoth', 'sticky_bomb', 'stun_grenade'):
+        tilt = Entity(parent=root, rotation_z=25)
+        Entity(parent=tilt, model='cube', scale=(0.32, 0.72, 0.32), color=item_col, unlit=True)
+        Entity(parent=tilt, model='diamond', scale=(0.42, 0.42, 0.42), y=0.45, color=color.yellow, unlit=True)
+
+    else:
+        # Клевер, кнут, восковое перо, хищные инстинкты и др.
+        Entity(parent=root, model='diamond', scale=(0.55, 0.72, 0.55), color=item_col, unlit=True)
+        Entity(parent=root, model='sphere', scale=0.38, color=color.white, unlit=True)
+
     return root
 
 
@@ -380,10 +573,6 @@ def build_item_mesh(parent_entity, item_key):
 # 5. СТРУКТУРЫ КАРТЫ С ТОЧНЫМИ ДАННЫМИ КОЛЛИЗИЙ
 # ==========================================
 def build_map_structure(parent_entity, struct_type, palette, pos, rot_y):
-    """
-    Строит структуру на карте и возвращает (root, local_obstacles),
-    где каждый элемент local_obstacles = (world_x, world_z, radius, height)
-    """
     root = Entity(parent=parent_entity, position=pos, rotation_y=rot_y)
     ruin_col = palette['ruins']
     accent_col = palette['accent']
@@ -399,8 +588,8 @@ def build_map_structure(parent_entity, struct_type, palette, pos, rot_y):
     if struct_type == 'arch':
         h = random.uniform(7.5, 11.5)
         w = random.uniform(6.5, 9.0)
-        p1 = Entity(parent=root, model='cube', scale=(1.8, h, 1.8), position=(-w / 2, h / 2, 0), color=ruin_col, collider='box')
-        p2 = Entity(parent=root, model='cube', scale=(1.8, h, 1.8), position=(w / 2, h / 2, 0), color=ruin_col, collider='box')
+        Entity(parent=root, model='cube', scale=(1.8, h, 1.8), position=(-w / 2, h / 2, 0), color=ruin_col, collider='box')
+        Entity(parent=root, model='cube', scale=(1.8, h, 1.8), position=(w / 2, h / 2, 0), color=ruin_col, collider='box')
         Entity(parent=root, model='cube', scale=(w + 2.8, 1.6, 2.2), position=(0, h + 0.5, 0), color=ruin_col)
         Entity(parent=root, model='diamond', scale=(1.3, 2.3, 1.3), position=(0, h - 1.5, 0), color=accent_col, unlit=True)
 

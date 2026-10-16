@@ -2,7 +2,10 @@ from ursina import *
 import math
 import random
 import textwrap
-from config import ctx, rgb, is_valid, clear_children, SETTINGS, ITEM_POOL, ACHIEVEMENTS, SURVIVOR_CLASSES, PROGRESS
+from config import (
+    ctx, rgb, is_valid, clear_children, SETTINGS, ITEM_POOL,
+    ACHIEVEMENTS, BOSS_TYPES, BOSS_TITLES, SURVIVOR_CLASSES, PROGRESS
+)
 from models import build_survivor_mesh
 from entities import Survivor, RemotePlayer, Enemy, Projectile
 from world import ItemDrop, Chest, build_stage_world
@@ -61,7 +64,6 @@ class GameManager(Entity):
     def setup_menu_diorama(self):
         self.diorama_root = Entity(position=(0, 0, 0))
 
-        # Главный подиум в центре (смещён вправо, чтобы не перекрываться левой панелью описания)
         self.main_pedestal = Entity(parent=self.diorama_root, position=(1.15, 0, -1.0))
         Entity(parent=self.main_pedestal, model='cube', scale=(3.4, 0.35, 3.4), y=-0.18, color=rgb(34, 42, 58))
         Entity(parent=self.main_pedestal, model='cube', scale=(2.8, 0.14, 2.8), y=0.04, color=rgb(55, 70, 96))
@@ -70,7 +72,6 @@ class GameManager(Entity):
         self.local_preview_actor = Entity(parent=self.main_pedestal, position=(0, 0.12, 0), rotation_y=15)
         self.local_preview_parts = build_survivor_mesh(self.local_preview_actor, self.selected_char)
 
-        # Задние постаменты для союзников в мультиплеере
         self.remote_pedestals = []
         back_coords = [
             (-0.95, 0.35, 2.3, 18),
@@ -191,7 +192,6 @@ class GameManager(Entity):
     # ПОСТРОЕНИЕ ВСЕХ ЭКРАНОВ ИНТЕРФЕЙСА
     # ==========================================
     def setup_ui(self):
-        # Общая верхняя шапка для меню
         self.header_panel = Entity(parent=camera.ui)
         Entity(parent=self.header_panel, model='quad', scale=(2.0, 0.12), y=0.44, z=0.02, color=rgb(12, 16, 26, 235))
         Entity(parent=self.header_panel, model='quad', scale=(2.0, 0.004), y=0.38, z=-0.01, color=rgb(255, 165, 50))
@@ -333,7 +333,6 @@ class GameManager(Entity):
         # ------------------------------------------
         self.lobby_panel = Entity(parent=camera.ui, enabled=False)
 
-        # Иконки персонажей слева сверху (7 кнопок в ряд)
         Text(
             text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 7]:',
             parent=self.lobby_panel, position=(-0.84, 0.355), z=-0.02,
@@ -363,7 +362,6 @@ class GameManager(Entity):
                 color=rgb(22, 28, 42, 245), highlight_color=col
             )
             btn.on_click = lambda k=ckey: self.select_lobby_character(k)
-            # Отдельный Text на панели, чтобы шрифт всегда был идеально чётким
             lbl = Text(
                 text=f"[{num_str}]\n{short_code}",
                 parent=self.lobby_panel, position=(ix, iy), z=-0.03,
@@ -371,7 +369,6 @@ class GameManager(Entity):
             )
             self.char_icon_Widgets[ckey] = {'border': border, 'btn': btn, 'lbl': lbl, 'base_col': col}
 
-        # Левая панель с описанием персонажа и его 4 навыков
         Entity(
             parent=self.lobby_panel, model='quad',
             scale=(0.76, 0.64), position=(-0.47, -0.095), z=0.02,
@@ -400,7 +397,6 @@ class GameManager(Entity):
             z=-0.02, scale=0.74, color=color.white
         )
 
-        # Правая панель лобби (статус комнаты, список игроков, таймер и кнопка Старт/Готов)
         Entity(
             parent=self.lobby_panel, model='quad',
             scale=(0.54, 0.28), position=(0.58, 0.20), z=0.02,
@@ -436,44 +432,26 @@ class GameManager(Entity):
         self.btn_lobby_leave.on_click = self.leave_lobby_to_main
 
         # ------------------------------------------
-        # 5. БОЕВОЙ ИНТЕРФЕЙС (HUD)
+        # 5. БОЕВОЙ ИНТЕРФЕЙС (HUD С ДИНАМИЧЕСКИМ ИНВЕНТАРЁМ)
         # ------------------------------------------
         self.hud_panel = Entity(parent=camera.ui, enabled=False)
         self.crosshair = Text(text='+', parent=self.hud_panel, origin=(0, 0), z=-0.02, scale=1.6, color=color.cyan)
 
         self.top_bar_bg = Entity(
-            parent=self.hud_panel, model='quad', scale=(0.98, 0.105),
-            position=(-0.27, 0.43), z=0.02, color=rgb(14, 18, 28, 210)
+            parent=self.hud_panel, model='quad', scale=(1.10, 0.115),
+            position=(-0.21, 0.425), z=0.02, color=rgb(14, 18, 28, 210)
         )
         self.hud_room_label = Text(
             text='INVENTORY  [HOLD TAB FOR DETAILS]',
             parent=self.hud_panel, position=(-0.74, 0.472), z=-0.02,
             scale=0.72, color=rgb(175, 195, 225)
         )
-
-        self.item_slots = {}
-        for idx, (k, info) in enumerate(ITEM_POOL.items()):
-            slot_x = -0.68 + idx * 0.135
-            slot_y = 0.415
-            slot_bg = Entity(
-                parent=self.hud_panel, model='quad', scale=(0.12, 0.068),
-                position=(slot_x, slot_y), z=0.01, color=rgb(28, 34, 48, 225)
-            )
-            Entity(
-                parent=self.hud_panel, model='quad', scale=(0.12, 0.010),
-                position=(slot_x, slot_y + 0.029), z=-0.01, color=info['color']
-            )
-            lbl_name = Text(
-                text=info['short'], parent=self.hud_panel,
-                position=(slot_x, slot_y + 0.008), z=-0.02, origin=(0, 0),
-                scale=0.78, color=info['color']
-            )
-            lbl_count = Text(
-                text='x0', parent=self.hud_panel,
-                position=(slot_x, slot_y - 0.016), z=-0.02, origin=(0, 0),
-                scale=0.86, color=rgb(125, 130, 145)
-            )
-            self.item_slots[k] = {'bg': slot_bg, 'name_txt': lbl_name, 'count_txt': lbl_count}
+        self.empty_inv_hint = Text(
+            text='Нет собранных предметов — ищите сундуки на карте [E]',
+            parent=self.hud_panel, position=(-0.74, 0.415), z=-0.02,
+            scale=0.76, color=rgb(115, 130, 155)
+        )
+        self.dynamic_inv_root = Entity(parent=self.hud_panel)
 
         Entity(
             parent=self.hud_panel, model='quad', scale=(0.46, 0.12),
@@ -507,7 +485,7 @@ class GameManager(Entity):
         )
         self.hp_text = Text(
             text='110 / 110 HP', parent=self.hud_panel, position=(-0.60, -0.43),
-            z=-0.02, origin=(0, 0), scale=0.90, color=color.white
+            z=-0.02, origin=(0, 0), scale=0.88, color=color.white
         )
 
         # Иконки 4 способностей (M1, M2, Shift, R)
@@ -545,14 +523,63 @@ class GameManager(Entity):
 
         # Панель [TAB]
         self.tab_panel = Entity(parent=self.hud_panel, enabled=False)
-        Entity(parent=self.tab_panel, model='quad', scale=(0.88, 0.56), position=(0, 0), z=0.01, color=rgb(12, 16, 26, 240))
-        self.tab_text = Text(text='', parent=self.tab_panel, position=(-0.39, 0.22), z=-0.02, scale=0.90, color=color.white)
+        Entity(parent=self.tab_panel, model='quad', scale=(1.15, 0.68), position=(0, 0), z=0.01, color=rgb(12, 16, 26, 242))
+        self.tab_text = Text(text='', parent=self.tab_panel, position=(-0.53, 0.29), z=-0.02, scale=0.78, color=color.white)
 
         # Баннер уведомлений
         self.banner_text = Text(text='', parent=camera.ui, position=(0, 0.19), z=-0.04, origin=(0, 0), scale=1.15, color=color.yellow)
         self.banner_timer = 0.0
 
         self.select_lobby_character(self.selected_char)
+
+    # ==========================================
+    # ДИНАМИЧЕСКОЕ ОБНОВЛЕНИЕ ПАНЕЛИ ПРЕДМЕТОВ ВВЕРХУ
+    # ==========================================
+    def refresh_inventory_hud(self):
+        clear_children(self.dynamic_inv_root)
+        if not is_valid(self.player):
+            self.empty_inv_hint.enabled = True
+            return
+
+        owned = [k for k in self.player.item_order if self.player.items.get(k, 0) > 0]
+        if not owned:
+            self.empty_inv_hint.enabled = True
+            self.top_bar_bg.scale_y = 0.115
+            self.top_bar_bg.y = 0.425
+            return
+
+        self.empty_inv_hint.enabled = False
+        per_row = 12
+        rows = (len(owned) - 1) // per_row + 1
+        self.top_bar_bg.scale_y = 0.055 + rows * 0.054
+        self.top_bar_bg.y = 0.482 - self.top_bar_bg.scale_y * 0.5
+
+        for idx, k in enumerate(owned):
+            info = ITEM_POOL[k]
+            cnt = self.player.items[k]
+            r = idx // per_row
+            c = idx % per_row
+            sx = -0.715 + c * 0.088
+            sy = 0.422 - r * 0.052
+
+            Entity(
+                parent=self.dynamic_inv_root, model='quad', scale=(0.082, 0.046),
+                position=(sx, sy), z=0.01, color=rgb(38, 48, 70, 235)
+            )
+            Entity(
+                parent=self.dynamic_inv_root, model='quad', scale=(0.082, 0.007),
+                position=(sx, sy + 0.019), z=-0.01, color=info['color']
+            )
+            Text(
+                text=info['short'], parent=self.dynamic_inv_root,
+                position=(sx, sy + 0.005), z=-0.02, origin=(0, 0),
+                scale=0.64, color=info['color']
+            )
+            Text(
+                text=f"x{cnt}", parent=self.dynamic_inv_root,
+                position=(sx, sy - 0.012), z=-0.02, origin=(0, 0),
+                scale=0.68, color=color.white
+            )
 
     # ==========================================
     # НАВИГАЦИЯ ПО ЭКРАНАМ МЕНЮ И НАСТРОЙКАМ
@@ -629,7 +656,6 @@ class GameManager(Entity):
         self.selected_char = char_key
         cfg = SURVIVOR_CLASSES[char_key]
 
-        # Подсветка выбранной иконки
         for k, w in self.char_icon_Widgets.items():
             if k == char_key:
                 w['border'].color = color.white
@@ -640,7 +666,6 @@ class GameManager(Entity):
                 w['border'].scale = (0.096, 0.080)
                 w['lbl'].color = color.white
 
-        # Обновление текста описания слева с аккуратным переносом строк
         self.lobby_char_line.color = cfg['body_color']
         self.lobby_char_title.text = cfg['name']
         self.lobby_char_title.color = cfg['body_color']
@@ -671,12 +696,10 @@ class GameManager(Entity):
             })
 
     def action_lobby_ready(self):
-        # В одиночной игре стартуем мгновенно
         if not self.net.connected:
             self.start_run(self.selected_char)
             return
 
-        # В мультиплеере голос "Готов" отменить нельзя!
         if self.my_ready:
             return
 
@@ -874,6 +897,7 @@ class GameManager(Entity):
         self.stage = 1
         self.elapsed_time = 0.0
         self.player = Survivor(chosen_char)
+        self.refresh_inventory_hud()
         self.generate_stage(seed=self.stage_seed)
         self.running = True
 
@@ -921,15 +945,17 @@ class GameManager(Entity):
         if not from_network and self.net.connected:
             self.net.broadcast({'type': 'stage_sync', 'stage': self.stage, 'seed': self.stage_seed})
 
-    def spawn_boss(self, pos, net_id=None, from_network=False):
-        boss = Enemy(pos, 'boss', self.difficulty_coeff, net_id=net_id)
+    def spawn_boss(self, pos, boss_type=None, net_id=None, from_network=False):
+        b_type = boss_type if boss_type in BOSS_TYPES else random.choice(BOSS_TYPES)
+        boss = Enemy(pos, b_type, self.difficulty_coeff, net_id=net_id)
         self.active_boss = boss
+        self.boss_title.text = BOSS_TITLES.get(b_type, BOSS_TITLES['boss'])
         self.enemies.append(boss)
         if not from_network and self.net.connected and self.net.mode == 'host':
             self.net.broadcast({
                 'type': 'enemy_spawn',
                 'net_id': boss.net_id,
-                'enemy_type': 'boss',
+                'enemy_type': b_type,
                 'pos': [round(pos.x, 2), round(pos.y, 2), round(pos.z, 2)],
                 'coeff': round(self.difficulty_coeff, 2)
             })
@@ -946,7 +972,12 @@ class GameManager(Entity):
             })
 
     def collect_item(self, key):
+        if key not in self.player.item_order:
+            self.player.item_order.append(key)
         self.player.items[key] += 1
+        if key == 'bison_steak':
+            self.player.hp = min(float(self.player.max_hp), self.player.hp + 25.0)
+        self.refresh_inventory_hud()
         info = ITEM_POOL[key]
         self.show_banner(f"ПОДОБРАНО: {info['name']} ({info['desc']})", info['color'], 3.2)
         if sum(self.player.items.values()) >= 6:
@@ -1059,7 +1090,6 @@ class GameManager(Entity):
                     self.update_lobby_ui()
 
             elif mtype == 'lobby_start_run':
-                # Каждый игрок начинает забег на СВОЁМ выбранном в лобби персонаже!
                 self.stage = msg.get('stage', 1)
                 self.stage_seed = msg.get('seed', 1001)
                 if not self.running:
@@ -1111,8 +1141,8 @@ class GameManager(Entity):
                 if self.running and self.net.mode == 'client':
                     etype = msg['enemy_type']
                     pos = Vec3(*msg['pos'])
-                    if etype == 'boss':
-                        self.spawn_boss(pos, net_id=msg['net_id'], from_network=True)
+                    if etype in BOSS_TYPES:
+                        self.spawn_boss(pos, boss_type=etype, net_id=msg['net_id'], from_network=True)
                     else:
                         e = Enemy(pos, etype, msg.get('coeff', self.difficulty_coeff), net_id=msg['net_id'])
                         self.enemies.append(e)
@@ -1141,7 +1171,7 @@ class GameManager(Entity):
 
             elif mtype == 'tp_activate':
                 if self.running and self.teleporter:
-                    self.teleporter.activate_teleporter(from_network=True)
+                    self.teleporter.activate_teleporter(boss_type=msg.get('boss_type'), from_network=True)
 
     def update(self):
         self.process_network()
@@ -1151,7 +1181,6 @@ class GameManager(Entity):
             if self.banner_timer <= 0:
                 self.banner_text.text = ''
 
-        # Логика вращения подиума и отсчёта времени в лобби
         if not self.running:
             t = time.time()
             self.local_preview_actor.rotation_y += 22 * time.dt
@@ -1192,17 +1221,26 @@ class GameManager(Entity):
         coeff = self.difficulty_coeff
         self.enemies = [e for e in self.enemies if is_valid(e)]
 
-        # ИИ-Режиссер спавнит врагов (в мультиплеере — на стороне хоста и рассылает клиентам)
+        # ИИ-Режиссер спавнит 7 типов обычных монстров по стоимости в кредитах
         if self.net.mode != 'client':
             tp_mult = 1.8 if (self.teleporter and self.teleporter.state == 'charging') else 1.0
-            self.director_credits += (3.8 * coeff * tp_mult) * time.dt
+            self.director_credits += (4.2 * coeff * tp_mult) * time.dt
             self.spawn_timer -= time.dt
 
-            if self.spawn_timer <= 0 and len(self.enemies) < 24:
-                self.spawn_timer = random.uniform(1.8, 3.4)
-                if self.director_credits >= 12.0:
-                    enemy_type = 'wisp' if (self.director_credits >= 18.0 and random.random() < 0.42) else 'lemurian'
-                    cost = 18.0 if enemy_type == 'wisp' else 12.0
+            if self.spawn_timer <= 0 and len(self.enemies) < 26:
+                self.spawn_timer = random.uniform(1.6, 3.2)
+                spawn_table = [
+                    ('beetle', 10.0),
+                    ('lemurian', 12.0),
+                    ('jellyfish', 14.0),
+                    ('wisp', 16.0),
+                    ('imp', 22.0),
+                    ('greater_wisp', 30.0),
+                    ('golem', 34.0),
+                ]
+                affordable = [(et, c) for et, c in spawn_table if self.director_credits >= c]
+                if affordable:
+                    enemy_type, cost = random.choice(affordable)
                     self.director_credits -= cost
 
                     ang = random.uniform(0, math.pi * 2)
@@ -1230,26 +1268,18 @@ class GameManager(Entity):
             self.hud_room_label.text = f"КОД КОМНАТЫ: {self.net.room_code}  |  ИГРОКОВ В СЕТИ: {players_online}  |  [TAB] ИНФО"
             self.hud_room_label.color = color.lime
         else:
-            self.hud_room_label.text = "INVENTORY  [HOLD TAB FOR DETAILS]"
+            self.hud_room_label.text = f"INVENTORY ({len(p.item_order)} TYPES)  [HOLD TAB FOR DETAILS]"
             self.hud_room_label.color = rgb(175, 195, 225)
-
-        for k, slot in self.item_slots.items():
-            cnt = p.items[k]
-            slot['count_txt'].text = f"x{cnt}"
-            if cnt > 0:
-                slot['count_txt'].color = color.white
-                slot['bg'].color = rgb(48, 58, 82, 240)
-            else:
-                slot['count_txt'].color = rgb(125, 130, 145)
-                slot['bg'].color = rgb(24, 28, 40, 180)
 
         self.gold_text.text = f"${p.gold}   |   {SURVIVOR_CLASSES[p.char_key]['name']}"
         hp_ratio = clamp(p.hp / p.max_hp, 0.0, 1.0)
         self.hp_bar_fill.scale_x = max(0.001, hp_ratio)
         self.hp_bar_fill.color = rgb(85, 225, 95) if hp_ratio > 0.35 else rgb(245, 70, 60)
-        self.hp_text.text = f"{int(p.hp)} / {p.max_hp} HP"
+        if p.shield >= 1.0:
+            self.hp_text.text = f"{int(p.hp)} (+{int(p.shield)}) / {p.max_hp} HP"
+        else:
+            self.hp_text.text = f"{int(p.hp)} / {p.max_hp} HP"
 
-        # Обновление индикаторов всех 4 способностей
         cds = {'m1': p.m1_cd, 'm2': p.m2_cd, 'shift': p.shift_cd, 'r': p.r_cd}
         for sk_key, (box, cd_lbl, col) in self.skill_boxes.items():
             rem = cds[sk_key]
@@ -1282,7 +1312,7 @@ class GameManager(Entity):
         self.tab_panel.enabled = bool(held_keys['tab'])
         if self.tab_panel.enabled:
             atk_bonus = p.items['syringe'] * 15
-            spd_bonus = p.items['hoof'] * 14
+            spd_bonus = p.items['hoof'] * 14 + p.items['energy_drink'] * 8 + p.items['red_whip'] * 12
             blk_pct = p.block_chance * 100.0
             net_line = f"Сеть: Комната {self.net.room_code} ({1 + len(self.remote_players)} игр.)" if self.net.connected else "Сеть: Одиночная игра"
             lines = [
@@ -1290,8 +1320,14 @@ class GameManager(Entity):
                 f"Base Damage: {p.base_damage:.1f}   |   Attack Speed: +{atk_bonus}% ({p.fire_rate:.1f} shots/s)",
                 f"Move Speed: +{spd_bonus}% ({p.move_speed:.1f})   |   Block Chance: {blk_pct:.1f}%   |   Crit: {p.crit_chance*100:.0f}%",
                 "",
-                "=== COLLECTED ITEMS & STACKS ==="
+                f"=== СОБРАННЫЕ АРТЕФАКТЫ ({sum(p.items.values())} ШТ.) ==="
             ]
-            for k, info in ITEM_POOL.items():
-                lines.append(f" - {info['name']} [x{p.items[k]}]: {info['desc']}")
+            if not p.item_order:
+                lines.append(" Пока нет собранных предметов. Открывайте сундуки за золото клавишей [E]!")
+            else:
+                for k in p.item_order[:16]:
+                    info = ITEM_POOL[k]
+                    lines.append(f" • {info['name']} [x{p.items[k]}]: {info['desc']}")
+                if len(p.item_order) > 16:
+                    lines.append(f" ... и ещё {len(p.item_order) - 16} типов предметов.")
             self.tab_text.text = '\n'.join(lines)
