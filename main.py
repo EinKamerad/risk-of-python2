@@ -1,11 +1,15 @@
+import sys
 from ursina import *
 from config import ctx, rgb
 from ui import GameManager
 
+is_frozen = getattr(sys, 'frozen', False)
+
 app = Ursina(
     title='Risk of Python 2 - LAN & Room Code Co-Op',
     borderless=False,
-    size=(1536, 864)
+    size=(1536, 864),
+    development_mode=not is_frozen
 )
 
 window.color = rgb(18, 20, 32)
@@ -17,11 +21,9 @@ game = GameManager()
 
 def input(key):
     if not ctx.game.running:
-        # Если активно поле ввода кода комнаты, передаём нажатия туда
         if ctx.game.handle_menu_key(key):
             return
 
-        # В лобби клавиши 1-7 выбирают персонажа для просмотра его описания и модели
         if ctx.game.menu_state == 'lobby':
             key_map = {
                 '1': 'commando',

@@ -1,11 +1,18 @@
 import json
 import os
+import sys
 from data.items import ITEM_POOL
 from data.achievements import ACHIEVEMENTS
 from data.monsters import MONSTER_LOG
 from data.stages import STAGE_PALETTES
 
-SAVE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'save_logbook.json')
+# Если игра скомпилирована в бинарник (.exe / ELF), сохраняем прогресс рядом с ним
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+SAVE_PATH = os.path.join(BASE_DIR, 'save_logbook.json')
 
 
 class ProgressData:
