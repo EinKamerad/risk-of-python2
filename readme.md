@@ -20,20 +20,20 @@
 
 2. Создайте и активируйте виртуальное окружение (рекомендуется Python 3.10+):
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # Linux / macOS
-# .venv\Scripts\activate   # Windows
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate  # Linux / macOS
+    # .venv\Scripts\activate   # Windows
 
 3. Установите зависимости:
 
-```bash
-pip install -r requirements.txt
+    ```bash
+    pip install -r requirements.txt
 
 4. Запустите игру:
 
-```bash
-python3 main.py
+    ```bash
+    python3 main.py
 
 ### Управление
 
