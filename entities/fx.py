@@ -275,6 +275,101 @@ class DummyClone(Entity):
             if is_valid(e) and distance(Vec3(*self.position), Vec3(*e.position)) <= 1.65:
                 self.take_damage(e.damage * 0.45 * time.dt)
 
+class MindustryTurret(Entity):
+    """Оборонительная турель Mindustry (Spectre + Mend Projector): наследует предметы игрока, стреляет во врагов и лечит союзников!"""
+    def __init__(self, owner, pos, slot_idx=0):
+        super().__init__(position=Vec3(*pos))
+        self.owner = owner
+        self.slot_idx = slot_idx
+        self.is_dead = False
+        self.max_hp = max(90, int(owner.max_hp * 1.1))
+        self.hp = float(self.max_hp)
+        self.shoot_cd = 0.2
+        self.mend_timer = 1.8
+
+        # Бронированное основание блока 2x2 из Mindustry
+        Entity(parent=self, model='cube', scale=(2.1, 0.45, 2.1), y=0.22, color=rgb(55, 62, 75))
+        Entity(parent=self, model='diamond', scale=(2.2, 0.15, 2.2), y=0.45, color=rgb(245, 185, 45), unlit=True)
+
+        # Вращающаяся башня турели Spectre
+        self.head = Entity(parent=self, position=(0, 0.85, 0))
+        Entity(parent=self.head, model='cube', scale=(1.15, 0.65, 1.25), color=rgb(235, 175, 45))
+        Entity(parent=self.head, model='cube', scale=(0.24, 0.24, 1.35), position=(-0.28, 0.05, 0.55), color=rgb(42, 48, 58))
+        Entity(parent=self.head, model='cube', scale=(0.24, 0.24, 1.35), position=(0.28, 0.05, 0.55), color=rgb(42, 48, 58))
+        Entity(parent=self.head, model='diamond', scale=(0.55, 0.35, 0.55), y=0.42, color=color.lime, unlit=True)
+
+        # Кольцо Mend Projector
+        self.mend_ring = Entity(
+            parent=self, model='diamond', scale=(1.8, 0.08, 1.8),
+            y=0.12, color=rgb(95, 255, 135, 160), unlit=True
+        )
+        self.label = Text(
+            text=f'MINDUSTRY TURRET #{slot_idx + 1}',
+            parent=self, y=2.5, scale=8.5, origin=(0, 0),
+            color=rgb(255, 215, 65), billboard=True
+        )
+        self.hp_bg = Entity(parent=self, model='quad', scale=(1.1, 0.10), y=2.15, color=color.black, billboard=True)
+        self.hp_fill = Entity(parent=self.hp_bg, model='quad', scale=(1, 1), z=-0.01, color=color.lime, unlit=True)
+
+    def take_damage(self, amount):
+        if self.is_dead or self.is_empty():
+            return
+        self.hp -= amount
+        if not self.hp_fill.is_empty():
+            self.hp_fill.scale_x = max(0.0, self.hp / max(1.0, self.max_hp))
+        if self.hp <= 0:
+            self.is_dead = True
+            VisualFX(Vec3(*self.position) + Vec3(0, 1.0, 0), color.orange, 3.2, 0.3)
+            destroy(self)
+
+    def update(self):
+        game = ctx.game
+        if not game or not game.running or self.is_dead or self.is_empty() or not is_valid(self.owner):
+            return
+
+        self.mend_ring.rotation_y += 85 * time.dt
+        my_pos = Vec3(*self.position)
+
+        # Импульс Mend Projector: лечит корабль игрока, клонов и соседние турели в радиусе 14м
+        self.mend_timer -= time.dt
+        if self.mend_timer <= 0:
+            self.mend_timer = 2.0
+            VisualFX(my_pos + Vec3(0, 0.8, 0), color.lime, 5.5, 0.3)
+            self.hp = min(float(self.max_hp), self.hp + self.max_hp * 0.08)
+            if is_valid(game.player) and distance(my_pos, Vec3(*game.player.position)) <= 14.0:
+                game.player.heal_amount(game.player.max_hp * 0.06 + 6.0)
+
+        # Поиск ближайшего вражеского монстра и стрельба с наследованием всех предметов игрока
+        self.shoot_cd -= time.dt
+        if self.shoot_cd <= 0:
+            self.shoot_cd = max(0.14, 1.1 / max(1.0, self.owner.fire_rate))
+            nearest = None
+            best_d = 36.0
+            for e in game.enemies:
+                if is_valid(e) and not getattr(e, 'is_ally', False):
+                    d = distance(my_pos, Vec3(*e.position))
+                    if d < best_d:
+                        best_d = d
+                        nearest = e
+            if nearest:
+                from entities.projectile import Projectile
+                target_p = Vec3(*nearest.position) + Vec3(0, nearest.hit_height, 0)
+                self.head.look_at(target_p)
+                sp = my_pos + Vec3(0, 1.0, 0) + self.head.forward * 1.1
+                aim = (target_p - sp).normalized()
+                Projectile(
+                    pos=sp, direction=aim, speed=72.0,
+                    damage=self.owner.base_damage * 0.72,
+                    scale_val=0.22, proj_color=rgb(255, 210, 55),
+                    is_player=True, can_proc=True
+                )
+
+        # Контактный урон от врагов вплотную
+        for e in list(game.enemies):
+            if is_valid(e) and not getattr(e, 'is_ally', False):
+                if distance(my_pos, Vec3(*e.position)) <= 2.1:
+                    self.take_damage(e.damage * 0.5 * time.dt)
+
 
 class LightningBeam(Entity):
     def __init__(self, start_pos, end_pos, beam_color=color.magenta, thickness=0.18):

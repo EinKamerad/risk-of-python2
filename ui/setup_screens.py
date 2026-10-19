@@ -141,14 +141,14 @@ class SetupScreensMixin:
         self.refresh_settings_labels()
 
         # ------------------------------------------
-        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (10 ВЫЖИВШИХ)
+        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (14 ВЫЖИВШИХ)
         # ------------------------------------------
         self.lobby_panel = Entity(parent=camera.ui, enabled=False)
 
         Text(
-            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 9, 0]:',
-            parent=self.lobby_panel, position=(-0.84, 0.355), z=-0.02,
-            scale=0.82, color=rgb(170, 220, 255)
+            text='ВЫБЕРИТЕ ВЫЖИВШЕГО [Клавиши 1-9, 0, -, =, [, ]]:',
+            parent=self.lobby_panel, position=(-0.84, 0.365), z=-0.02,
+            scale=0.80, color=rgb(170, 220, 255)
         )
 
         self.char_icon_Widgets = {}
@@ -163,24 +163,30 @@ class SetupScreensMixin:
             ('enforcer', '8', 'ENF', rgb(85, 155, 245)),
             ('scout', '9', 'SCT', rgb(245, 185, 40)),
             ('m4a1', '0', 'M4', rgb(85, 235, 125)),
+            ('medic', '-', 'MED', rgb(235, 55, 65)),
+            ('aigis', '=', 'AIG', rgb(245, 205, 65)),
+            ('reimu', '[', 'RMU', rgb(235, 45, 60)),
+            ('mindustry', ']', 'MND', rgb(255, 190, 45)),
         ]
         for idx, (ckey, num_str, short_code, col) in enumerate(char_order):
-            ix = -0.81 + idx * 0.077
-            iy = 0.285
+            row = idx // 7
+            col_idx = idx % 7
+            ix = -0.80 + col_idx * 0.108
+            iy = 0.312 - row * 0.064
             border = Entity(
                 parent=self.lobby_panel, model='quad',
-                scale=(0.073, 0.078), position=(ix, iy), z=0.01, color=col
+                scale=(0.098, 0.056), position=(ix, iy), z=0.01, color=col
             )
             btn = Button(
                 text='', parent=self.lobby_panel,
-                scale=(0.065, 0.068), position=(ix, iy), z=-0.01,
+                scale=(0.090, 0.048), position=(ix, iy), z=-0.01,
                 color=rgb(22, 28, 42, 245), highlight_color=col
             )
             btn.on_click = lambda k=ckey: self.select_lobby_character(k)
             lbl = Text(
-                text=f"[{num_str}]\n{short_code}",
+                text=f"[{num_str}] {short_code}",
                 parent=self.lobby_panel, position=(ix, iy), z=-0.03,
-                origin=(0, 0), scale=0.66, color=color.white
+                origin=(0, 0), scale=0.62, color=color.white
             )
             self.char_icon_Widgets[ckey] = {'border': border, 'btn': btn, 'lbl': lbl, 'base_col': col}
 

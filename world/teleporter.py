@@ -65,14 +65,22 @@ class Teleporter(Entity):
     def _try_spawn_blue_portal(self, game, my_pos):
         if getattr(game, 'blue_orb_spawned', False) and self.spawned_blue_portal is None:
             game.blue_orb_spawned = False
-            # Спавним Синий Портал на 13 метров ближе к центру карты, чтобы зоны [E] никогда не перекрывались
+            # Спавним Синий Портал на 26 метров в сторону от Телепорта (с поворотом на 35 градусов к центру),
+            # чтобы он находился полностью за пределами 18-метровой зоны Телепорта и не перекрывал [E]
             to_center = Vec3(-my_pos.x, 0, -my_pos.z)
-            dir_vec = to_center.normalized() if to_center.length() > 1.0 else Vec3(-1, 0, 0)
-            bp_pos = my_pos + dir_vec * 13.0
-            bp = BluePortal(bp_pos, target_mode='bazaar')
+            base_dir = to_center.normalized() if to_center.length() > 1.0 else Vec3(-1, 0, 0)
+            rad = math.radians(32.0)
+            rot_dir = Vec3(
+                base_dir.x * math.cos(rad) - base_dir.z * math.sin(rad),
+                0,
+                base_dir.x * math.sin(rad) + base_dir.z * math.cos(rad)
+            ).normalized()
+            bp_pos = my_pos + rot_dir * 26.0
+            resolved = game.resolve_horizontal_collision(bp_pos, radius=2.5, entity_y=0.0)
+            bp = BluePortal(Vec3(resolved.x, 0.0, resolved.z), target_mode='bazaar')
             self.spawned_blue_portal = bp
             game.stage_entities.append(bp)
-
+            
     def activate_teleporter(self, boss_type=None, from_network=False):
         if self.state != 'idle':
             return

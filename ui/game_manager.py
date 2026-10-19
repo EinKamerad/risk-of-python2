@@ -2,7 +2,7 @@ from ursina import *
 import math
 import random
 from config import (
-    ctx, rgb, is_valid, SETTINGS, ITEM_POOL,
+    ctx, rgb, is_valid, SETTINGS, ITEM_POOL, roll_item_from_pool,
     ACHIEVEMENTS, BOSS_TYPES, BOSS_TITLES, SURVIVOR_CLASSES, PROGRESS
 )
 from entities import Survivor, Enemy, VisualFX
@@ -269,8 +269,8 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
                 'coeff': round(self.difficulty_coeff, 2)
             })
 
-    def spawn_item_drop(self, pos, item_key=None, broadcast=True):
-        key = item_key if item_key in ITEM_POOL else random.choice(list(ITEM_POOL.keys()))
+    def spawn_item_drop(self, pos, item_key=None, pool_type='small_chest', broadcast=True):
+        key = item_key if item_key in ITEM_POOL else roll_item_from_pool(pool_type)
         drop = ItemDrop(pos, key)
         self.stage_entities.append(drop)
         if broadcast and self.net.connected:
@@ -284,7 +284,7 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         if key not in self.player.item_order:
             self.player.item_order.append(key)
         self.player.items[key] += 1
-        if key in ('bison_steak', 'transcendence', 'lunar_pauldron'):
+        if key in ('bison_steak', 'tarrasque', 'transcendence', 'lunar_pauldron'):
             self.player.hp = float(self.player.max_hp)
         elif key == 'shaped_glass':
             self.player.hp = min(self.player.hp, float(self.player.max_hp))

@@ -9,6 +9,44 @@ def build_survivor_mesh(parent_entity, char_key):
     root = Entity(parent=parent_entity, y=0)
     parts = {'root': root, 'halo': None, 'bow': None, 'shield': None}
 
+    # Особая 3D-модель парящего Космического Корабля из Mindustry (Gamma Core Unit)
+    if char_key == 'mindustry':
+        left_hip = Entity(parent=root, position=(-0.35, 0.85, -0.25))
+        right_hip = Entity(parent=root, position=(0.35, 0.85, -0.25))
+        # Реактивные сопла двигателей вместо ног
+        for hip in (left_hip, right_hip):
+            Entity(parent=hip, model='cube', scale=(0.24, 0.24, 0.45), color=cfg['armor_color'])
+            Entity(parent=hip, model='diamond', scale=(0.28, 0.28, 0.55), z=-0.35, color=color.cyan, unlit=True)
+        parts['left_leg'] = left_hip
+        parts['right_leg'] = right_hip
+
+        torso = Entity(parent=root, position=(0, 1.35, 0))
+        # Центральный дельта-корпус корабля Mindustry
+        Entity(parent=torso, model='diamond', scale=(1.25, 0.42, 1.65), color=cfg['body_color'])
+        Entity(parent=torso, model='cube', scale=(0.68, 0.36, 0.95), y=0.10, color=cfg['armor_color'])
+        # Светящееся ядро строительного луча сверху
+        Entity(parent=torso, model='diamond', scale=(0.45, 0.35, 0.65), position=(0, 0.28, 0.12), color=cfg['visor_color'], unlit=True)
+
+        # Крылья-пилоны корабля
+        for side in (-1, 1):
+            wing = Entity(parent=torso, model='diamond', scale=(1.15, 0.18, 0.95), position=(side * 0.68, -0.02, -0.10), rotation_z=side * -10, color=cfg['body_color'])
+            Entity(parent=wing, model='cube', scale=(0.55, 0.12, 0.65), position=(side * 0.15, 0.05, 0.05), color=cfg['armor_color'])
+            Entity(parent=wing, model='cube', scale=(0.14, 0.16, 0.85), position=(side * 0.28, 0.02, 0.35), color=cfg['visor_color'], unlit=True)
+
+        halo = Entity(parent=torso, position=(0, 0.48, -0.15))
+        Entity(parent=halo, model='diamond', scale=(0.95, 0.95, 0.08), rotation_x=90, color=color.yellow, unlit=True)
+        parts['halo'] = halo
+        parts['torso'] = torso
+
+        left_shoulder = Entity(parent=torso, position=(-0.62, 0.05, 0.35))
+        right_shoulder = Entity(parent=torso, position=(0.62, 0.05, 0.35))
+        for sh in (left_shoulder, right_shoulder):
+            Entity(parent=sh, model='cube', scale=(0.20, 0.20, 0.65), z=0.25, color=cfg['armor_color'])
+            Entity(parent=sh, model='sphere', scale=0.22, z=0.60, color=cfg['visor_color'], unlit=True)
+        parts['left_arm'] = left_shoulder
+        parts['right_arm'] = right_shoulder
+        return parts
+
     left_hip = Entity(parent=root, position=(-0.22, 0.86, 0))
     right_hip = Entity(parent=root, position=(0.22, 0.86, 0))
     for hip in (left_hip, right_hip):
@@ -110,41 +148,60 @@ def build_survivor_mesh(parent_entity, char_key):
         Entity(parent=torso, model='sphere', scale=(0.18, 0.12, 0.18), position=(0.34, 0.48, 0), color=color.red, unlit=True)
 
     elif char_key == 'scout':
-        # Дворф-разведчик из Deep Rock Galactic: каска с прожектором, очки и пышная рыжая борода!
         Entity(parent=head, model='sphere', scale=(0.52, 0.48, 0.52), y=0.06, color=rgb(245, 185, 40))
-        # Налобный шахтёрский фонарь
         Entity(parent=head, model='sphere', scale=(0.24, 0.24, 0.22), position=(0, 0.22, 0.26), color=color.white, unlit=True)
-        # Тактические визор-очки
         Entity(parent=head, model='cube', scale=(0.48, 0.14, 0.32), position=(0, 0.02, 0.16), color=rgb(60, 225, 255), unlit=True)
-        # Рыжая густая борода дворфа
         beard = Entity(parent=head, position=(0, -0.22, 0.18))
         Entity(parent=beard, model='diamond', scale=(0.58, 0.65, 0.42), color=rgb(225, 95, 25))
         Entity(parent=beard, model='diamond', scale=(0.38, 0.55, 0.35), position=(-0.18, -0.08, -0.04), color=rgb(205, 80, 20))
         Entity(parent=beard, model='diamond', scale=(0.38, 0.55, 0.35), position=(0.18, -0.08, -0.04), color=rgb(205, 80, 20))
-        # Жёлтые канистры для флаеров на поясе
         for bx in (-0.28, 0.28):
             Entity(parent=torso, model='cube', scale=(0.14, 0.28, 0.14), position=(bx, -0.26, 0.20), color=color.yellow, unlit=True)
 
     elif char_key == 'm4a1':
-        # M4A1 MOD3 (Girls' Frontline): тактическая гарнитура, светло-каштановые волосы с зелёным локоном, плащ и пушка Юпитера
         Entity(parent=head, model='sphere', scale=(0.48, 0.50, 0.48), color=rgb(248, 222, 205))
-        # Изумрудно-зелёные глаза
         Entity(parent=head, model='sphere', scale=0.10, position=(-0.12, 0.03, 0.22), color=rgb(75, 245, 130), unlit=True)
         Entity(parent=head, model='sphere', scale=0.10, position=(0.12, 0.03, 0.22), color=rgb(75, 245, 130), unlit=True)
-        # Причёска и фирменный зелёный локон спереди
         Entity(parent=head, model='sphere', scale=(0.54, 0.38, 0.54), y=0.14, color=rgb(155, 135, 115))
         Entity(parent=head, model='diamond', scale=(0.14, 0.45, 0.16), position=(-0.14, -0.05, 0.24), rotation_z=12, color=rgb(85, 245, 140), unlit=True)
         Entity(parent=head, model='diamond', scale=(0.24, 0.85, 0.24), position=(0.26, -0.22, -0.15), rotation_x=18, color=rgb(145, 125, 105))
-        # Тактические наушники-гарнитура AR Team
         for side in (-1, 1):
             Entity(parent=head, model='cube', scale=(0.12, 0.24, 0.22), position=(side * 0.27, 0.04, 0.02), color=rgb(40, 44, 52))
-        # Тёмно-зелёный шарф и развевающийся плащ MOD3
         Entity(parent=torso, model='cube', scale=(0.64, 0.20, 0.46), y=0.32, color=rgb(65, 110, 82))
         Entity(parent=torso, model='diamond', scale=(0.95, 0.72, 0.90), y=-0.38, color=rgb(42, 46, 50))
-        # Сложенная рельсовая пушка Юпитера (Jupiter Cannon) за правым плечом
         jup = Entity(parent=backpack, position=(0.28, 0.32, -0.12), rotation_x=-20)
         Entity(parent=jup, model='cube', scale=(0.24, 0.95, 0.28), y=0.25, color=rgb(48, 54, 62))
         Entity(parent=jup, model='cube', scale=(0.14, 0.88, 0.32), y=0.28, color=rgb(95, 255, 135), unlit=True)
+
+    elif char_key == 'medic':
+        Entity(parent=head, model='sphere', scale=(0.48, 0.52, 0.48), color=rgb(245, 205, 180))
+        Entity(parent=head, model='cube', scale=(0.50, 0.18, 0.50), y=0.20, color=rgb(35, 30, 32))
+        Entity(parent=head, model='sphere', scale=(0.18, 0.16, 0.10), position=(-0.12, 0.04, 0.23), color=color.white, unlit=True)
+        Entity(parent=head, model='sphere', scale=(0.18, 0.16, 0.10), position=(0.12, 0.04, 0.23), color=color.white, unlit=True)
+        Entity(parent=torso, model='cube', scale=(0.74, 0.62, 0.44), y=-0.38, color=rgb(235, 238, 245))
+        Entity(parent=torso, model='cube', scale=(0.12, 0.42, 0.45), position=(0, 0.08, 0.02), color=color.red, unlit=True)
+        Entity(parent=backpack, model='cube', scale=(0.35, 0.65, 0.35), position=(0.18, 0.10, -0.12), color=rgb(220, 45, 45), unlit=True)
+
+    elif char_key == 'aigis':
+        Entity(parent=head, model='sphere', scale=(0.48, 0.50, 0.48), color=rgb(248, 228, 212))
+        Entity(parent=head, model='sphere', scale=(0.54, 0.44, 0.54), y=0.10, color=rgb(245, 205, 65))
+        Entity(parent=head, model='sphere', scale=0.11, position=(-0.12, 0.02, 0.22), color=color.cyan, unlit=True)
+        Entity(parent=head, model='sphere', scale=0.11, position=(0.12, 0.02, 0.22), color=color.cyan, unlit=True)
+        for side in (-1, 1):
+            Entity(parent=head, model='diamond', scale=(0.16, 0.32, 0.32), position=(side * 0.28, 0.02, 0), color=rgb(225, 230, 240))
+        Entity(parent=torso, model='diamond', scale=(0.52, 0.20, 0.25), position=(0, 0.34, 0.20), color=rgb(235, 45, 60), unlit=True)
+
+    elif char_key == 'reimu':
+        Entity(parent=head, model='sphere', scale=(0.48, 0.50, 0.48), color=rgb(248, 225, 215))
+        Entity(parent=head, model='sphere', scale=(0.54, 0.42, 0.54), y=0.12, color=rgb(38, 28, 36))
+        bow_knot = Entity(parent=head, position=(0, 0.16, -0.26), rotation_x=15)
+        Entity(parent=bow_knot, model='diamond', scale=(0.95, 0.42, 0.20), color=rgb(235, 35, 45), unlit=True)
+        Entity(parent=torso, model='diamond', scale=(1.05, 0.68, 1.05), y=-0.38, color=rgb(225, 38, 48))
+        Entity(parent=torso, model='cube', scale=(0.52, 0.24, 0.46), y=0.22, color=color.white)
+        halo = Entity(parent=torso, position=(0, 0.35, -0.35))
+        Entity(parent=halo, model='sphere', scale=0.36, position=(-0.65, 0, 0), color=rgb(235, 40, 50), unlit=True)
+        Entity(parent=halo, model='sphere', scale=0.36, position=(0.65, 0, 0), color=color.white, unlit=True)
+        parts['halo'] = halo
 
     left_shoulder = Entity(parent=torso, position=(-0.48, 0.25, 0))
     right_shoulder = Entity(parent=torso, position=(0.48, 0.25, 0))
@@ -200,20 +257,37 @@ def build_survivor_mesh(parent_entity, char_key):
                 Entity(parent=sg, model='cube', scale=(0.12, 0.08, 0.85), position=(0, 0.12, 0.28), color=cfg['visor_color'], unlit=True)
         elif char_key == 'scout':
             if idx == 0:
-                # Пистолет-гарпун Grappling Hook в левой руке
                 grap = Entity(parent=sh, position=(0, -0.10, 0.50))
                 Entity(parent=grap, model='cube', scale=(0.16, 0.20, 0.55), z=0.15, color=rgb(235, 175, 40))
                 Entity(parent=grap, model='diamond', scale=(0.28, 0.12, 0.28), z=0.45, color=color.cyan, unlit=True)
             else:
-                # Винтовка Deepcore GK2 в правой руке
                 gk2 = Entity(parent=sh, position=(0, -0.10, 0.55))
                 Entity(parent=gk2, model='cube', scale=(0.14, 0.22, 0.85), z=0.25, color=rgb(45, 52, 68))
                 Entity(parent=gk2, model='cube', scale=(0.16, 0.08, 0.72), position=(0, 0.10, 0.28), color=rgb(35, 130, 235), unlit=True)
         elif char_key == 'm4a1' and idx == 1:
-            # Тактический карабин M4A1 SOPMOD/MOD3 с голографическим прицелом
             rifle = Entity(parent=sh, position=(0, -0.10, 0.55))
             Entity(parent=rifle, model='cube', scale=(0.12, 0.20, 0.92), z=0.28, color=rgb(35, 38, 42))
             Entity(parent=rifle, model='cube', scale=(0.14, 0.10, 0.24), position=(0, 0.14, 0.22), color=rgb(95, 255, 135), unlit=True)
+        elif char_key == 'medic':
+            if idx == 0:
+                medigun = Entity(parent=sh, position=(0, -0.12, 0.52))
+                Entity(parent=medigun, model='cube', scale=(0.20, 0.22, 0.78), z=0.20, color=rgb(70, 75, 85))
+                Entity(parent=medigun, model='sphere', scale=0.26, z=0.62, color=color.red, unlit=True)
+            else:
+                syr_gun = Entity(parent=sh, position=(0, -0.10, 0.52))
+                Entity(parent=syr_gun, model='cube', scale=(0.18, 0.20, 0.68), z=0.20, color=rgb(60, 65, 75))
+                Entity(parent=syr_gun, model='sphere', scale=(0.24, 0.24, 0.42), position=(0, 0.14, 0.22), color=color.red, unlit=True)
+        elif char_key == 'aigis':
+            if idx == 0:
+                cannon = Entity(parent=sh, position=(0, -0.10, 0.50))
+                Entity(parent=cannon, model='cube', scale=(0.24, 0.24, 0.72), z=0.20, color=rgb(235, 195, 55))
+            else:
+                barrel = Entity(parent=sh, position=(0, -0.10, 0.52))
+                Entity(parent=barrel, model='cube', scale=(0.22, 0.16, 0.55), z=0.18, color=color.cyan, unlit=True)
+        elif char_key == 'reimu' and idx == 1:
+            gohei = Entity(parent=sh, position=(0, -0.10, 0.55), rotation_x=20)
+            Entity(parent=gohei, model='cube', scale=(0.08, 0.08, 1.15), z=0.35, color=rgb(140, 85, 45))
+            Entity(parent=gohei, model='diamond', scale=(0.35, 0.45, 0.35), z=0.95, color=color.white, unlit=True)
 
     parts['left_arm'] = left_shoulder
     parts['right_arm'] = right_shoulder

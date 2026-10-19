@@ -53,7 +53,7 @@ class RemotePlayer(Entity):
         self.position = lerp(self.position, self.target_pos, min(1.0, time.dt * 14.0))
         self.rotation_y = lerp(self.rotation_y, self.target_rot_y, min(1.0, time.dt * 14.0))
 
-        if self.is_moving:
+        if self.is_moving and self.char_key != 'mindustry':
             swing = math.sin(time.time() * 11.5) * 36.0
             self.parts['left_leg'].rotation_x = swing
             self.parts['right_leg'].rotation_x = -swing
