@@ -150,7 +150,7 @@ SURVIVOR_CLASSES = {
     },
     'enforcer': {
         'name': 'ENFORCER',
-        'subtitle': 'Тяжёлый Бастион UES (Hallowed Concepts)',
+        'subtitle': 'Тяжёлый Бастион UES (Hollowed Concepts)',
         'icon': 'ENF',
         'hp': 175,
         'speed': 9.0,
@@ -167,6 +167,48 @@ SURVIVOR_CLASSES = {
             'm2': {'name': 'Shield Bash', 'cd': 4.0, 'desc': '[ПКМ - Ближний бой] Оглушающий удар щитом перед собой (260% урона, отбрасывание + стан 2с и +20 щита).'},
             'shift': {'name': 'Protect and Serve', 'cd': 1.2, 'desc': '[Shift] Переключение Стойки Щита: -65% входящего урона и +45% скорости стрельбы (при снятии — рывок).'},
             'r': {'name': 'Tear Gas Grenade', 'cd': 9.5, 'desc': '[R] Бросает гранату со слезоточивым газом (замедляет врагов на 50% и наносит урон по области 6 сек).'}
+        }
+    },
+    'scout': {
+        'name': 'SCOUT (DRG)',
+        'subtitle': 'ROCK AND STONE! Разведчик Hoxxes IV',
+        'icon': 'SCT',
+        'hp': 120,
+        'speed': 11.4,
+        'damage': 14.5,
+        'fire_rate': 6.8,
+        'proj_speed': 72.0,
+        'proj_scale': 0.22,
+        'aoe': 0.0,
+        'body_color': rgb(35, 115, 215),
+        'armor_color': rgb(55, 65, 82),
+        'visor_color': rgb(255, 210, 55),
+        'skills': {
+            'm1': {'name': 'Deepcore GK2', 'cd': 0.14, 'desc': '[ЛКМ] Скорострельная штурмовая винтовка с высокой кучностью и точностью.'},
+            'm2': {'name': 'Boomstick (Special Powder)', 'cd': 3.6, 'desc': '[ПКМ] Мощный дуплет из обреза (8 дробин) + реактивный прыжок от отдачи в воздухе!'},
+            'shift': {'name': 'Grappling Hook', 'cd': 3.2, 'desc': '[Shift] Выстреливает крюком-кошкой на 45м и стремительно притягивает Скаута на тросе (+35% бега).'},
+            'r': {'name': 'IFG & Flare Grenade', 'cd': 9.0, 'desc': '[R] Бросает гранату ингибиторного поля (IFG): замедляет врагов на 65% и бьёт током по зоне.'}
+        }
+    },
+    'm4a1': {
+        'name': 'M4A1 (GFL)',
+        'subtitle': 'Лидер AR Team [DUMMY LINK SYSTEM]',
+        'icon': 'M4',
+        'hp': 110,
+        'speed': 10.4,
+        'damage': 15.5,
+        'fire_rate': 5.8,
+        'proj_speed': 68.0,
+        'proj_scale': 0.23,
+        'aoe': 0.0,
+        'body_color': rgb(75, 95, 78),
+        'armor_color': rgb(42, 46, 48),
+        'visor_color': rgb(95, 255, 135),
+        'skills': {
+            'm1': {'name': 'M4A1 Assault Carbine', 'cd': 0.17, 'desc': '[ЛКМ] Точный огонь из карабина. Все живые клоны Dummy Link синхронно атакуют цели.'},
+            'm2': {'name': 'Jupiter Cannon (MOD3)', 'cd': 4.5, 'desc': '[ПКМ] Раскладывает рельсовую пушку: пробивной энерго-выстрел с огромным взрывом (340% ур.).'},
+            'shift': {'name': 'Tactical Evasion', 'cd': 3.6, 'desc': '[Shift] Тактический рывок с получением +25 щита и приказом клонам дать залп.'},
+            'r': {'name': 'Dummy Link (До 4 Клонов)', 'cd': 7.5, 'desc': '[R] Спавнит ИИ-клона с вашими предметами (макс 4). При смерти вы переселяетесь в живого клона (КД навыков 12с)!'}
         }
     }
 }

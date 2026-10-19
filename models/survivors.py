@@ -102,15 +102,49 @@ def build_survivor_mesh(parent_entity, char_key):
         Entity(parent=torso, model='diamond', scale=(1.16, 0.22, 1.16), position=(0, -0.54, 0), color=rgb(195, 240, 255), unlit=True)
 
     elif char_key == 'enforcer':
-        # Массивный шлем-бастион с широким голубым визором и воротником брони
         Entity(parent=head, model='cube', scale=(0.60, 0.56, 0.60), color=cfg['armor_color'])
         Entity(parent=head, model='cube', scale=(0.54, 0.20, 0.38), position=(0, 0.04, 0.16), color=cfg['visor_color'], unlit=True)
         Entity(parent=head, model='cube', scale=(0.64, 0.14, 0.64), y=0.26, color=cfg['body_color'])
-        # Тяжёлый бронированный воротник и нагрудник
         Entity(parent=torso, model='cube', scale=(0.82, 0.26, 0.56), position=(0, 0.34, -0.02), color=cfg['armor_color'])
-        # Тактические мигалки на плечах (синяя и красная)
         Entity(parent=torso, model='sphere', scale=(0.18, 0.12, 0.18), position=(-0.34, 0.48, 0), color=color.cyan, unlit=True)
         Entity(parent=torso, model='sphere', scale=(0.18, 0.12, 0.18), position=(0.34, 0.48, 0), color=color.red, unlit=True)
+
+    elif char_key == 'scout':
+        # Дворф-разведчик из Deep Rock Galactic: каска с прожектором, очки и пышная рыжая борода!
+        Entity(parent=head, model='sphere', scale=(0.52, 0.48, 0.52), y=0.06, color=rgb(245, 185, 40))
+        # Налобный шахтёрский фонарь
+        Entity(parent=head, model='sphere', scale=(0.24, 0.24, 0.22), position=(0, 0.22, 0.26), color=color.white, unlit=True)
+        # Тактические визор-очки
+        Entity(parent=head, model='cube', scale=(0.48, 0.14, 0.32), position=(0, 0.02, 0.16), color=rgb(60, 225, 255), unlit=True)
+        # Рыжая густая борода дворфа
+        beard = Entity(parent=head, position=(0, -0.22, 0.18))
+        Entity(parent=beard, model='diamond', scale=(0.58, 0.65, 0.42), color=rgb(225, 95, 25))
+        Entity(parent=beard, model='diamond', scale=(0.38, 0.55, 0.35), position=(-0.18, -0.08, -0.04), color=rgb(205, 80, 20))
+        Entity(parent=beard, model='diamond', scale=(0.38, 0.55, 0.35), position=(0.18, -0.08, -0.04), color=rgb(205, 80, 20))
+        # Жёлтые канистры для флаеров на поясе
+        for bx in (-0.28, 0.28):
+            Entity(parent=torso, model='cube', scale=(0.14, 0.28, 0.14), position=(bx, -0.26, 0.20), color=color.yellow, unlit=True)
+
+    elif char_key == 'm4a1':
+        # M4A1 MOD3 (Girls' Frontline): тактическая гарнитура, светло-каштановые волосы с зелёным локоном, плащ и пушка Юпитера
+        Entity(parent=head, model='sphere', scale=(0.48, 0.50, 0.48), color=rgb(248, 222, 205))
+        # Изумрудно-зелёные глаза
+        Entity(parent=head, model='sphere', scale=0.10, position=(-0.12, 0.03, 0.22), color=rgb(75, 245, 130), unlit=True)
+        Entity(parent=head, model='sphere', scale=0.10, position=(0.12, 0.03, 0.22), color=rgb(75, 245, 130), unlit=True)
+        # Причёска и фирменный зелёный локон спереди
+        Entity(parent=head, model='sphere', scale=(0.54, 0.38, 0.54), y=0.14, color=rgb(155, 135, 115))
+        Entity(parent=head, model='diamond', scale=(0.14, 0.45, 0.16), position=(-0.14, -0.05, 0.24), rotation_z=12, color=rgb(85, 245, 140), unlit=True)
+        Entity(parent=head, model='diamond', scale=(0.24, 0.85, 0.24), position=(0.26, -0.22, -0.15), rotation_x=18, color=rgb(145, 125, 105))
+        # Тактические наушники-гарнитура AR Team
+        for side in (-1, 1):
+            Entity(parent=head, model='cube', scale=(0.12, 0.24, 0.22), position=(side * 0.27, 0.04, 0.02), color=rgb(40, 44, 52))
+        # Тёмно-зелёный шарф и развевающийся плащ MOD3
+        Entity(parent=torso, model='cube', scale=(0.64, 0.20, 0.46), y=0.32, color=rgb(65, 110, 82))
+        Entity(parent=torso, model='diamond', scale=(0.95, 0.72, 0.90), y=-0.38, color=rgb(42, 46, 50))
+        # Сложенная рельсовая пушка Юпитера (Jupiter Cannon) за правым плечом
+        jup = Entity(parent=backpack, position=(0.28, 0.32, -0.12), rotation_x=-20)
+        Entity(parent=jup, model='cube', scale=(0.24, 0.95, 0.28), y=0.25, color=rgb(48, 54, 62))
+        Entity(parent=jup, model='cube', scale=(0.14, 0.88, 0.32), y=0.28, color=rgb(95, 255, 135), unlit=True)
 
     left_shoulder = Entity(parent=torso, position=(-0.48, 0.25, 0))
     right_shoulder = Entity(parent=torso, position=(0.48, 0.25, 0))
@@ -148,11 +182,9 @@ def build_survivor_mesh(parent_entity, char_key):
             Entity(parent=scis, model='sphere', scale=0.24, position=(0, 0.02, 0.05), color=color.gold, unlit=True)
         elif char_key == 'enforcer':
             if idx == 0:
-                # Силовой Щит Бастиона в левой руке
                 shield = Entity(parent=sh, position=(-0.28, -0.15, 0.45), rotation_y=-25)
                 Entity(parent=shield, model='cube', scale=(1.15, 1.65, 0.14), color=cfg['armor_color'])
                 Entity(parent=shield, model='cube', scale=(1.22, 1.72, 0.08), z=-0.02, color=cfg['body_color'])
-                # Энергетическое смотровое окно и силовое поле щита
                 Entity(parent=shield, model='cube', scale=(0.82, 0.28, 0.18), y=0.38, color=cfg['visor_color'], unlit=True)
                 Entity(parent=shield, model='diamond', scale=(0.45, 0.65, 0.18), y=-0.20, color=cfg['visor_color'], unlit=True)
                 aura = Entity(
@@ -162,11 +194,26 @@ def build_survivor_mesh(parent_entity, char_key):
                 parts['shield'] = shield
                 parts['shield_aura'] = aura
             else:
-                # Тяжёлый помповый дробовик Riot Shotgun в правой руке
                 sg = Entity(parent=sh, position=(0, -0.10, 0.55))
                 Entity(parent=sg, model='cube', scale=(0.16, 0.22, 0.95), z=0.25, color=rgb(35, 40, 50))
                 Entity(parent=sg, model='cube', scale=(0.20, 0.14, 0.55), position=(0, -0.08, 0.35), color=cfg['body_color'])
                 Entity(parent=sg, model='cube', scale=(0.12, 0.08, 0.85), position=(0, 0.12, 0.28), color=cfg['visor_color'], unlit=True)
+        elif char_key == 'scout':
+            if idx == 0:
+                # Пистолет-гарпун Grappling Hook в левой руке
+                grap = Entity(parent=sh, position=(0, -0.10, 0.50))
+                Entity(parent=grap, model='cube', scale=(0.16, 0.20, 0.55), z=0.15, color=rgb(235, 175, 40))
+                Entity(parent=grap, model='diamond', scale=(0.28, 0.12, 0.28), z=0.45, color=color.cyan, unlit=True)
+            else:
+                # Винтовка Deepcore GK2 в правой руке
+                gk2 = Entity(parent=sh, position=(0, -0.10, 0.55))
+                Entity(parent=gk2, model='cube', scale=(0.14, 0.22, 0.85), z=0.25, color=rgb(45, 52, 68))
+                Entity(parent=gk2, model='cube', scale=(0.16, 0.08, 0.72), position=(0, 0.10, 0.28), color=rgb(35, 130, 235), unlit=True)
+        elif char_key == 'm4a1' and idx == 1:
+            # Тактический карабин M4A1 SOPMOD/MOD3 с голографическим прицелом
+            rifle = Entity(parent=sh, position=(0, -0.10, 0.55))
+            Entity(parent=rifle, model='cube', scale=(0.12, 0.20, 0.92), z=0.28, color=rgb(35, 38, 42))
+            Entity(parent=rifle, model='cube', scale=(0.14, 0.10, 0.24), position=(0, 0.14, 0.22), color=rgb(95, 255, 135), unlit=True)
 
     parts['left_arm'] = left_shoulder
     parts['right_arm'] = right_shoulder

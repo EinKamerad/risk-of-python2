@@ -3,7 +3,7 @@ import math
 import random
 from config import ctx, rgb, is_valid, ITEM_POOL, SURVIVOR_CLASSES
 from models.survivors import build_survivor_mesh
-from entities.fx import VisualFX
+from entities.fx import VisualFX, LightningBeam
 from entities.survivor_skills import SurvivorSkillsMixin
 
 
@@ -46,6 +46,17 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.barrage_timer = 0.0
         self.dragon_install_timer = 0.0
         self.shield_stance = False
+
+        # Состояние крюка-кошки Скаута (DRG)
+        self.grapple_active = False
+        self.grapple_target = Vec3(0, 0, 0)
+        self.grapple_timer = 0.0
+        self.scout_speed_buff = 0.0
+
+        # Состояние клонов Dummy Link и блокировки навыков M4A1 (GFL)
+        self.dummy_clones = []
+        self.skill_lock_timer = 0.0
+
         self.predatory_timer = 0.0
         self.opal_timer = 0.0
         self.medkit_timer = 0.0
@@ -88,6 +99,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
     def move_speed(self):
         di_mult = 1.45 if self.dragon_install_timer > 0 else 1.0
         stance_mult = 0.65 if self.shield_stance else 1.0
+        scout_mult = 1.35 if self.scout_speed_buff > 0 else 1.0
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
         flux_pen = 0.70 ** self.items.get('lunar_pauldron', 0)
         spd_bonus = (
@@ -96,7 +108,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
             + 0.08 * self.items['energy_drink']
             + 0.12 * self.items['red_whip']
         )
-        return self.base_speed * spd_bonus * di_mult * stance_mult * tonic_mult * flux_pen
+        return self.base_speed * spd_bonus * di_mult * stance_mult * scout_mult * tonic_mult * flux_pen
 
     @property
     def fire_rate(self):
@@ -130,6 +142,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         if not game or not game.running or self.is_empty():
             return
 
+        self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
         prev_y = self.y
         sens = game.settings.get('sensitivity', 45)
         if mouse.locked:
@@ -138,7 +151,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
 
         move_input = Vec3(held_keys['d'] - held_keys['a'], 0, held_keys['w'] - held_keys['s'])
         self.is_moving = move_input.length() > 0
-        if self.is_moving:
+        if self.is_moving and not self.grapple_active:
             move_dir = (self.forward * move_input.z + self.right * move_input.x).normalized()
             self.position += move_dir * self.move_speed * time.dt
 
@@ -158,6 +171,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.m2_cd = max(0.0, self.m2_cd - time.dt)
         self.shift_cd = max(0.0, self.shift_cd - time.dt)
         self.r_cd = max(0.0, self.r_cd - time.dt)
+        self.scout_speed_buff = max(0.0, self.scout_speed_buff - time.dt)
+        self.skill_lock_timer = max(0.0, self.skill_lock_timer - time.dt)
         self.predatory_timer = max(0.0, self.predatory_timer - time.dt)
         self.opal_timer = max(0.0, self.opal_timer - time.dt)
         self.shield = max(0.0, self.shield - 1.5 * time.dt)
@@ -183,12 +198,47 @@ class Survivor(Entity, SurvivorSkillsMixin):
         if held_keys['r'] and self.r_cd <= 0:
             self.use_r_skill()
 
-        if self.dash_timer > 0:
-            self.position += self.dash_vector * time.dt
-            self.dash_timer -= time.dt
-            self.parts['torso'].rotation_x = 30.0
+        dt_step = max(0.001, min(time.dt, 0.05))
+
+        # Полет на крюке-кошке Скаута (Grappling Hook)
+        if self.grapple_active:
+            self.grapple_timer -= dt_step
+            my_pos = Vec3(*self.position)
+            to_anchor = self.grapple_target - (my_pos + Vec3(0, 1.2, 0))
+            dist_to_anchor = to_anchor.length()
+            if dist_to_anchor <= 2.4 or self.grapple_timer <= 0:
+                self.grapple_active = False
+                self.vel_y = max(4.5, self.vel_y * 0.25)
+                self.jumps_left = max(1, self.max_jumps)
+            else:
+                pull_dir = to_anchor.normalized()
+                self.position += pull_dir * 52.0 * dt_step
+                self.vel_y = 0.0
+                self.grounded = False
+                if random.random() < 0.45:
+                    LightningBeam(Vec3(*self.position) + Vec3(0, 1.4, 0), self.grapple_target, color.cyan, 0.09)
         else:
-            self.parts['torso'].rotation_x = lerp(self.parts['torso'].rotation_x, 0, time.dt * 10)
+            if self.dash_timer > 0:
+                self.position += self.dash_vector * time.dt
+                self.dash_timer -= time.dt
+                self.parts['torso'].rotation_x = 30.0
+            else:
+                self.parts['torso'].rotation_x = lerp(self.parts['torso'].rotation_x, 0, time.dt * 10)
+
+            space_down = bool(held_keys['space'])
+            if space_down and not self.space_was_pressed and self.jumps_left > 0:
+                self.vel_y = 12.0
+                self.grounded = False
+                self.jumps_left -= 1
+                if self.items['wax_quill'] > 0 and self.is_moving:
+                    self.dash_vector = self.forward * (14.0 + 4.0 * self.items['wax_quill'])
+                    self.dash_timer = max(self.dash_timer, 0.16)
+                if not self.grounded:
+                    VisualFX(Vec3(*self.position), color.cyan, 1.8, 0.22)
+            self.space_was_pressed = space_down
+
+            self.vel_y -= 26.0 * dt_step
+            self.y += self.vel_y * dt_step
 
         if self.barrage_shots > 0:
             self.barrage_timer -= time.dt
@@ -196,22 +246,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.barrage_timer = 0.065
                 self.barrage_shots -= 1
                 self.fire_primary_projectile(damage_mult=1.25, col_override=color.cyan)
-
-        space_down = bool(held_keys['space'])
-        if space_down and not self.space_was_pressed and self.jumps_left > 0:
-            self.vel_y = 12.0
-            self.grounded = False
-            self.jumps_left -= 1
-            if self.items['wax_quill'] > 0 and self.is_moving:
-                self.dash_vector = self.forward * (14.0 + 4.0 * self.items['wax_quill'])
-                self.dash_timer = max(self.dash_timer, 0.16)
-            if not self.grounded:
-                VisualFX(Vec3(*self.position), color.cyan, 1.8, 0.22)
-        self.space_was_pressed = space_down
-
-        dt_step = max(0.001, min(time.dt, 0.05))
-        self.vel_y -= 26.0 * dt_step
-        self.y += self.vel_y * dt_step
 
         floor_h = game.get_surface_height(self.position.x, self.position.z, self.y, prev_y=prev_y)
         if self.y <= floor_h:
@@ -284,7 +318,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
             return
 
         dmg = amount
-        # Protect & Serve (Стойка щита Enforcer снижает входящий урон на 65%)
         if self.shield_stance:
             dmg *= 0.35
             VisualFX(Vec3(*self.position) + self.forward * 0.9 + Vec3(0, 1.3, 0), color.cyan, 1.8, 0.18)
@@ -310,5 +343,34 @@ class Survivor(Entity, SurvivorSkillsMixin):
 
         self.hp -= dmg
         if self.hp <= 0:
+            # СПАСЕНИЕ ЧЕРЕЗ DUMMY LINK (M4A1): переселение сознания в живого клона!
+            self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
+            if self.char_key == 'm4a1' and self.dummy_clones:
+                host_clone = self.dummy_clones.pop(0)
+                old_pos = Vec3(*self.position)
+                new_pos = Vec3(*host_clone.position)
+                host_clone.is_dead = True
+                destroy(host_clone)
+
+                VisualFX(old_pos + Vec3(0, 1.2, 0), color.red, 4.5, 0.35)
+                LightningBeam(old_pos + Vec3(0, 1.5, 0), new_pos + Vec3(0, 1.5, 0), rgb(95, 255, 135), 0.45)
+                self.position = new_pos
+                self.vel_y = 0.0
+                self.hp = float(self.max_hp)
+                self.shield = 35.0
+
+                # Штраф после переселения в клона: 12 секунд доступны только выстрелы ЛКМ (M1)!
+                self.skill_lock_timer = 12.0
+                self.m2_cd = max(self.m2_cd, 12.0)
+                self.shift_cd = max(self.shift_cd, 12.0)
+                self.r_cd = max(self.r_cd, 12.0)
+
+                VisualFX(new_pos + Vec3(0, 1.2, 0), rgb(95, 255, 135), 5.0, 0.4)
+                game.show_banner(
+                    'DUMMY LINK TRANSFER :: ВЫ ПЕРЕСЕЛИЛИСЬ В КЛОНА! СПОСОБНОСТИ ПЕРЕГРУЖЕНЫ НА 12 СЕК!',
+                    rgb(95, 255, 135), 4.5
+                )
+                return
+
             self.hp = 0
             game.on_player_death()

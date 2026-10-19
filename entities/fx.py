@@ -2,6 +2,7 @@ from ursina import *
 import math
 import random
 from config import ctx, rgb, is_valid
+from models.survivors import build_survivor_mesh
 
 
 class VisualFX(Entity):
@@ -41,7 +42,6 @@ class MeleeSlashFX(Entity):
         core1.animate_scale_z(0.02, duration=0.16)
 
         if scissor_cross:
-            # Второе перекрестное лезвие для ножниц Гвен
             blade2 = Entity(
                 parent=self, model='diamond',
                 scale=(arc_width, 0.18, reach * 0.72),
@@ -55,7 +55,7 @@ class MeleeSlashFX(Entity):
 
 
 class TearGasZone(Entity):
-    """Газовая завеса Enforcer [R]: замедляет врагов на 50%, оглушает при броске и наносит периодический урон"""
+    """Газовая завеса Enforcer [R]: замедляет врагов на 50% и наносит периодический урон"""
     def __init__(self, center_pos, tick_dmg):
         super().__init__(position=Vec3(center_pos[0], center_pos[1] + 0.1, center_pos[2]))
         self.tick_dmg = tick_dmg
@@ -101,6 +101,175 @@ class TearGasZone(Entity):
                         e.slow_timer = max(e.slow_timer, 1.5)
                         e.take_damage(self.tick_dmg)
                         VisualFX(e_pos + Vec3(0, 1.1, 0), rgb(140, 255, 100), 1.5, 0.2)
+
+
+class IFGZone(Entity):
+    """Ингибиторное поле (IFG) Скаута из DRG + осветительный флаер: замедляет врагов и бьёт током"""
+    def __init__(self, center_pos, tick_dmg):
+        super().__init__(position=Vec3(center_pos[0], center_pos[1] + 0.1, center_pos[2]))
+        self.tick_dmg = tick_dmg
+        self.duration = 6.5
+        self.tick_timer = 0.0
+        self.radius = 8.5
+
+        self.ring = Entity(
+            parent=self, model='sphere',
+            scale=(self.radius * 2, 0.15, self.radius * 2),
+            color=rgb(60, 195, 255, 80), unlit=True
+        )
+        # Центральный маяк-генератор IFG и яркий флаер
+        self.pylon = Entity(parent=self, model='diamond', scale=(0.8, 2.6, 0.8), y=1.3, color=color.cyan, unlit=True)
+        Entity(parent=self, model='sphere', scale=0.65, y=2.8, color=color.yellow, unlit=True)
+
+    def update(self):
+        game = ctx.game
+        if not game or not game.running or self.is_empty():
+            return
+        self.duration -= time.dt
+        if not self.pylon.is_empty():
+            self.pylon.rotation_y += 140 * time.dt
+        if self.duration <= 0:
+            destroy(self)
+            return
+
+        self.tick_timer -= time.dt
+        if self.tick_timer <= 0:
+            self.tick_timer = 0.40
+            my_pos = Vec3(*self.position)
+            for e in list(game.enemies):
+                if is_valid(e):
+                    e_pos = Vec3(*e.position)
+                    if distance_2d(e_pos, my_pos) <= self.radius and abs(e_pos.y - my_pos.y) <= 5.5:
+                        e.slow_timer = max(e.slow_timer, 2.0)
+                        e.take_damage(self.tick_dmg)
+                        LightningBeam(my_pos + Vec3(0, 2.2, 0), e_pos + Vec3(0, 1.2, 0), color.cyan, 0.14)
+
+
+class DummyClone(Entity):
+    """Тактический ИИ-клон M4A1 (Dummy Link): наследует все предметы игрока, сам ведёт бой и спасает от смерти!"""
+    def __init__(self, owner, slot_idx=0):
+        spawn_offset = Vec3(math.cos(slot_idx * 1.57) * 3.0, 0, math.sin(slot_idx * 1.57) * 3.0)
+        start_p = Vec3(*owner.position) + spawn_offset
+        super().__init__(position=start_p)
+        self.owner = owner
+        self.slot_idx = slot_idx
+        self.is_dead = False
+        self.max_hp = max(60, int(owner.max_hp * 0.85))
+        self.hp = float(self.max_hp)
+        self.shoot_cd = random.uniform(0.1, 0.35)
+
+        self.parts = build_survivor_mesh(self, 'm4a1')
+        # Голографическое кольцо Dummy Link под ногами клона
+        self.link_ring = Entity(
+            parent=self, model='diamond', scale=(1.35, 0.08, 1.35),
+            y=0.06, color=rgb(95, 255, 135, 180), unlit=True
+        )
+        self.label = Text(
+            text=f'DUMMY LINK #{slot_idx + 1}',
+            parent=self, y=2.75, scale=8.5, origin=(0, 0),
+            color=rgb(95, 255, 135), billboard=True
+        )
+        self.hp_bg = Entity(parent=self, model='quad', scale=(1.0, 0.10), y=2.45, color=color.black, billboard=True)
+        self.hp_fill = Entity(parent=self.hp_bg, model='quad', scale=(1, 1), z=-0.01, color=rgb(95, 255, 135), unlit=True)
+
+    def command_burst_shot(self):
+        """Синхронный выстрел по команде хозяйки M4A1"""
+        if self.is_dead or self.is_empty():
+            return
+        self.fire_at_nearest(dmg_mult=0.75)
+
+    def fire_at_nearest(self, dmg_mult=0.65):
+        game = ctx.game
+        if not game or not is_valid(self.owner):
+            return
+        my_pos = Vec3(*self.position)
+        nearest = None
+        best_d = 38.0
+        for e in game.enemies:
+            if is_valid(e):
+                d = distance(my_pos, Vec3(*e.position))
+                if d < best_d:
+                    best_d = d
+                    nearest = e
+        if nearest:
+            from entities.projectile import Projectile
+            self.look_at_2d(Vec3(*nearest.position), 'y')
+            sp = my_pos + Vec3(0, 1.5, 0) + self.forward * 0.85
+            aim = ((Vec3(*nearest.position) + Vec3(0, nearest.hit_height, 0)) - sp).normalized()
+            # Снаряды клона имеют is_player=True и can_proc=True, поэтому наследуют ВСЕ предметы игрока!
+            Projectile(
+                pos=sp, direction=aim, speed=self.owner.proj_speed,
+                damage=self.owner.base_damage * dmg_mult,
+                scale_val=0.20, proj_color=rgb(95, 255, 135),
+                is_player=True, can_proc=True
+            )
+            arm = self.parts['right_arm']
+            arm.rotation_x = -24
+            arm.animate_rotation_x(0, duration=0.10)
+
+    def take_damage(self, amount):
+        if self.is_dead or self.is_empty():
+            return
+        self.hp -= amount
+        if not self.hp_fill.is_empty():
+            self.hp_fill.scale_x = max(0.0, self.hp / max(1.0, self.max_hp))
+        if self.hp <= 0:
+            self.is_dead = True
+            VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(95, 255, 135), 2.8, 0.3)
+            destroy(self)
+
+    def update(self):
+        game = ctx.game
+        if not game or not game.running or self.is_dead or self.is_empty() or not is_valid(self.owner):
+            return
+
+        self.link_ring.rotation_y += 90 * time.dt
+        my_pos = Vec3(*self.position)
+        owner_pos = Vec3(*self.owner.position)
+
+        # Обновляем максимальное HP клона при подборе предметов хозяйкой
+        self.max_hp = max(60, int(self.owner.max_hp * 0.85))
+        self.hp = min(float(self.max_hp), self.hp + 2.0 * time.dt)
+        if not self.hp_fill.is_empty():
+            self.hp_fill.scale_x = clamp(self.hp / self.max_hp, 0.0, 1.0)
+
+        # Позиция в тактическом строю вокруг M4A1
+        form_angle = time.time() * 0.6 + self.slot_idx * (math.pi * 0.5)
+        desired_pos = owner_pos + Vec3(math.cos(form_angle) * 3.8, 0, math.sin(form_angle) * 3.8)
+
+        # Если клон слишком далеко от хозяйки (например, после телепорта или лифта), телепортируем его к ней
+        dist_to_owner = distance(my_pos, owner_pos)
+        if dist_to_owner > 28.0 or abs(my_pos.y - owner_pos.y) > 14.0:
+            self.position = desired_pos + Vec3(0, 0.5, 0)
+            VisualFX(Vec3(*self.position) + Vec3(0, 1, 0), rgb(95, 255, 135), 2.0, 0.2)
+            return
+
+        # Передвижение к точке строя
+        to_desired = Vec3(desired_pos.x - my_pos.x, 0, desired_pos.z - my_pos.z)
+        if to_desired.length() > 0.65:
+            move_dir = to_desired.normalized()
+            self.position += move_dir * (self.owner.move_speed * 0.98) * time.dt
+            self.look_at_2d(desired_pos, 'y')
+            swing = math.sin(time.time() * 12.0 + self.slot_idx) * 34.0
+            self.parts['left_leg'].rotation_x = swing
+            self.parts['right_leg'].rotation_x = -swing
+        else:
+            self.parts['left_leg'].rotation_x = lerp(self.parts['left_leg'].rotation_x, 0, time.dt * 10)
+            self.parts['right_leg'].rotation_x = lerp(self.parts['right_leg'].rotation_x, 0, time.dt * 10)
+
+        floor_h = game.get_surface_height(self.x, self.z, self.y, prev_y=my_pos.y)
+        self.y = floor_h
+
+        # Автоматическая стрельба клона с учётом скорости атаки хозяйки (Soldier's Syringe и др.)
+        self.shoot_cd -= time.dt
+        if self.shoot_cd <= 0:
+            self.shoot_cd = max(0.14, 1.35 / max(1.0, self.owner.fire_rate))
+            self.fire_at_nearest(dmg_mult=0.60)
+
+        # Враги вплотную к клону могут наносить ему урон (клоны также прикрывают хозяйку!)
+        for e in list(game.enemies):
+            if is_valid(e) and distance(Vec3(*self.position), Vec3(*e.position)) <= 1.65:
+                self.take_damage(e.damage * 0.45 * time.dt)
 
 
 class LightningBeam(Entity):
