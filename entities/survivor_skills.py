@@ -3,8 +3,8 @@ import math
 import random
 from config import ctx, rgb, is_valid, SURVIVOR_CLASSES
 from entities.fx import (
-    VisualFX, MeleeSlashFX, TearGasZone, LightningBeam,
-    OrbitalStrikeFX, ArrowRainZone, HallowedMistZone
+    VisualFX, MeleeSlashFX, TearGasZone, IFGZone, DummyClone,
+    LightningBeam, OrbitalStrikeFX, ArrowRainZone, HallowedMistZone
 )
 from entities.projectile import Projectile, apply_player_hit_effects
 
@@ -54,7 +54,6 @@ class SurvivorSkillsMixin:
             scissor_cross=scissor_cross
         )
 
-        # Центры проверки попадания: прямо перед игроком и на дистанции взмаха
         strike_center = my_pos + fwd * (reach * 0.55)
         hit_count = 0
 
@@ -62,7 +61,6 @@ class SurvivorSkillsMixin:
             if not is_valid(e):
                 continue
             e_pos = Vec3(*e.position)
-            # Проверка по высоте (чтобы можно было бить летающих виспов и медуз над головой)
             if abs((e_pos.y + e.hit_height * 0.5) - (my_pos.y + 1.2)) > 4.2:
                 continue
 
@@ -100,6 +98,29 @@ class SurvivorSkillsMixin:
 
         return hit_count
 
+    def _find_grapple_anchor(self, start_pos, aim_dir, max_dist=45.0):
+        """Находит точку зацепа крюка-кошки Скаута (препятствие, платформу, врага или точку впереди)"""
+        game = ctx.game
+        step = 1.5
+        cur = Vec3(*start_pos)
+        for i in range(1, int(max_dist / step) + 1):
+            p = start_pos + aim_dir * (i * step)
+            # Попадание в колонну или монолит
+            if game.is_inside_solid_obstacle(p, 0.35):
+                return p
+            # Попадание в пол или парящую платформу
+            surf_h = game.get_surface_height(p.x, p.z, p.y + 1.2)
+            if p.y <= surf_h + 0.3:
+                return Vec3(p.x, surf_h + 0.5, p.z)
+            # Зацеп за крупного монстра или босса
+            for e in game.enemies:
+                if is_valid(e) and distance(p, Vec3(*e.position) + Vec3(0, e.hit_height, 0)) <= e.hit_radius + 0.6:
+                    return Vec3(*e.position) + Vec3(0, e.hit_height, 0)
+            cur = p
+        # Если в воздухе ничего не задели — цепляемся на максимальной длине троса (но не ниже пола)
+        floor_y = game.get_surface_height(cur.x, cur.z, cur.y)
+        return Vec3(cur.x, max(floor_y + 1.0, cur.y), cur.z)
+
     def fire_primary_projectile(self, damage_mult=1.0, col_override=None):
         # 1. СОЛ БЭДГАЙ: Ближний бой мечом Junkyard Dog
         if self.char_key == 'sol' and col_override is None:
@@ -114,7 +135,6 @@ class SurvivorSkillsMixin:
                 knockback=1.2,
                 aoe=2.2
             )
-            # Лёгкий боевой шаг вперёд при ударе мечом на земле
             if self.is_moving and self.grounded and self.dash_timer <= 0:
                 self.position += self.forward * 0.35
 
@@ -124,7 +144,7 @@ class SurvivorSkillsMixin:
             arm.animate_rotation((0, 0, 0), duration=0.15)
             return
 
-        # 2. ГВЕН: Ближний бой ножницами Snip Snip! (быстрые перекрестные разрезы с вампиризмом)
+        # 2. ГВЕН: Ближний бой ножницами Snip Snip!
         if self.char_key == 'gwen' and col_override is None:
             self.perform_melee_attack(
                 reach=4.8,
@@ -141,13 +161,12 @@ class SurvivorSkillsMixin:
             arm.animate_rotation((0, 0, 0), duration=0.11)
             return
 
-        # 3. ENFORCER: Помповый дробовик Riot Shotgun (веер из 6 картечин)
+        # 3. ENFORCER: Помповый дробовик Riot Shotgun
         if self.char_key == 'enforcer' and col_override is None:
             aim_dir = camera.forward
             spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 1.05
             spread = 0.032 if getattr(self, 'shield_stance', False) else 0.075
-            pellets = 6
-            for i in range(pellets):
+            for _ in range(6):
                 offset = Vec3(
                     random.uniform(-spread, spread),
                     random.uniform(-spread * 0.6, spread * 0.6),
@@ -175,7 +194,7 @@ class SurvivorSkillsMixin:
             arm.animate_rotation_x(0, duration=0.18)
             return
 
-        # 4. Стрелковые классы (Commando, Artificer, Huntress, Buzz, V1)
+        # 4. Стрелковые классы (Commando, Artificer, Huntress, Buzz, V1, Scout, M4A1)
         aim_dir = camera.forward
         spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 0.95
         color_map = {
@@ -186,7 +205,9 @@ class SurvivorSkillsMixin:
             'v1': rgb(255, 230, 50),
             'sol': rgb(255, 110, 25),
             'gwen': rgb(95, 225, 255),
-            'enforcer': rgb(110, 225, 255)
+            'enforcer': rgb(110, 225, 255),
+            'scout': rgb(255, 215, 65),
+            'm4a1': rgb(95, 255, 135)
         }
         default_col = color_map.get(self.char_key, color.yellow)
         proj_col = col_override if col_override else default_col
@@ -212,10 +233,10 @@ class SurvivorSkillsMixin:
             self.proj_scale, col_name, self.proj_aoe, False, 0, self.char_key == 'huntress'
         )
 
-        if self.char_key in ('buzz', 'v1'):
+        if self.char_key in ('buzz', 'v1', 'scout', 'm4a1'):
             arm = self.parts['right_arm']
             arm.rotation_x = -26
-            arm.animate_rotation_x(0, duration=0.14)
+            arm.animate_rotation_x(0, duration=0.12)
         else:
             arm = self.parts['left_arm'] if self.shoot_side % 2 == 0 else self.parts['right_arm']
             self.shoot_side += 1
@@ -227,6 +248,10 @@ class SurvivorSkillsMixin:
         self.fire_primary_projectile()
 
     def use_m2_skill(self):
+        if getattr(self, 'skill_lock_timer', 0.0) > 0:
+            ctx.game.show_banner(f'НЕЙРОСЕТЬ ПЕРЕГРУЖЕНА ПОСЛЕ ПЕРЕСЕЛЕНИЯ ({self.skill_lock_timer:.1f}С)!', color.red, 1.2)
+            return
+
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
         cd_mult = max(0.25, 1.0 - 0.12 * self.items['backup_mag'])
@@ -276,14 +301,12 @@ class SurvivorSkillsMixin:
             self._broadcast_shot(spawn_pos, aim_dir, 85.0, self.base_damage * 2.5, 0.45, 'v1', 0.0, False, 4, True)
 
         elif self.char_key == 'sol':
-            # Volcanic Viper + Gun Flame Pillar (ближний апперкот + короткая огненная волна по земле)
             self.vel_y = 14.5
             self.grounded = False
             self.perform_melee_attack(
                 reach=6.5, cleave_radius=4.5, damage_mult=2.8,
                 slash_col=rgb(255, 90, 20), lifesteal=4.0, knockback=3.0, aoe=3.5
             )
-            # Короткая волна пламени Gun Flame на 12 метров вперёд
             gf_dir = Vec3(self.forward.x, 0.0, self.forward.z).normalized()
             Projectile(
                 pos=spawn_pos, direction=gf_dir, speed=34.0,
@@ -292,7 +315,6 @@ class SurvivorSkillsMixin:
             )
 
         elif self.char_key == 'gwen':
-            # Center Snip! — мощный финальный смыкающий разрез гигантскими ножницами вблизи
             self.perform_melee_attack(
                 reach=7.2, cleave_radius=4.2, damage_mult=3.2,
                 slash_col=rgb(155, 240, 255), lifesteal=6.5, scissor_cross=True, aoe=2.8
@@ -302,7 +324,6 @@ class SurvivorSkillsMixin:
             arm.animate_rotation_x(0, duration=0.22)
 
         elif self.char_key == 'enforcer':
-            # Shield Bash — оглушающий удар щитом вблизи с отбрасыванием и получением барьера
             self.dash_vector = self.forward * 16.0
             self.dash_timer = 0.16
             self.shield = min(float(self.max_hp), self.shield + 20.0)
@@ -314,7 +335,49 @@ class SurvivorSkillsMixin:
             l_arm.rotation_y = 45
             l_arm.animate_rotation_y(0, duration=0.22)
 
+        elif self.char_key == 'scout':
+            # Jury-Rigged Boomstick (Special Powder): мощный залп картечью + реактивный отскок в воздухе!
+            for _ in range(8):
+                offset = Vec3(random.uniform(-0.09, 0.09), random.uniform(-0.06, 0.06), random.uniform(-0.09, 0.09))
+                d = (aim_dir + offset).normalized()
+                Projectile(
+                    pos=spawn_pos, direction=d, speed=66.0,
+                    damage=self.base_damage * 0.55, scale_val=0.24,
+                    proj_color=color.orange, is_player=True, pierce=True, max_lifetime=0.38
+                )
+            # Ударная волна дробовика вплотную
+            self.perform_melee_attack(
+                reach=4.8, cleave_radius=3.4, damage_mult=1.6,
+                slash_col=color.orange, knockback=4.5, aoe=2.0
+            )
+            # Оверклок Special Powder: если Скаут в воздухе или смотрит вниз — отдача подбрасывает его!
+            if not self.grounded or aim_dir.y < -0.15:
+                recoil_dir = -aim_dir
+                self.vel_y = max(14.5, recoil_dir.y * 22.0)
+                self.grounded = False
+                self.dash_vector = Vec3(recoil_dir.x, 0, recoil_dir.z) * 24.0
+                self.dash_timer = 0.28
+                VisualFX(spawn_pos, color.yellow, 3.2, 0.25)
+
+        elif self.char_key == 'm4a1':
+            # Seal of the Avenger (Jupiter Cannon): пробивной рельсовый выстрел с гигантским взрывом
+            VisualFX(spawn_pos, rgb(95, 255, 135), 3.0, 0.28)
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=58.0,
+                damage=self.base_damage * 3.4, scale_val=0.78,
+                proj_color=rgb(95, 255, 135), is_player=True, aoe=6.8, pierce=True
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 58.0, self.base_damage * 3.4, 0.78, 'buzz', 6.8, True, 0, False)
+            # Все живые клоны также дают залп
+            for clone in list(getattr(self, 'dummy_clones', [])):
+                if is_valid(clone):
+                    clone.command_burst_shot()
+
     def use_shift_skill(self):
+        if getattr(self, 'skill_lock_timer', 0.0) > 0:
+            ctx.game.show_banner(f'НЕЙРОСЕТЬ ПЕРЕГРУЖЕНА ПОСЛЕ ПЕРЕСЕЛЕНИЯ ({self.skill_lock_timer:.1f}С)!', color.red, 1.2)
+            return
+
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
         self.shift_cd = skills['shift']['cd']
@@ -322,7 +385,6 @@ class SurvivorSkillsMixin:
         nrg_mult = 1.0 + 0.18 * self.items['energy_drink']
 
         if self.char_key == 'enforcer':
-            # Protect and Serve: переключение боевой стойки со щитом
             self.shield_stance = not getattr(self, 'shield_stance', False)
             sh_ent = self.parts.get('shield')
             aura_ent = self.parts.get('shield_aura')
@@ -340,10 +402,21 @@ class SurvivorSkillsMixin:
                     sh_ent.animate_rotation((0, -25, 0), duration=0.15)
                 if aura_ent:
                     aura_ent.enabled = False
-                # При складывании щита Enforcer делает короткий тактический марш-рывок вперёд
                 self.dash_vector = self.forward * 18.0 * nrg_mult
                 self.dash_timer = 0.18
                 VisualFX(my_pos + Vec3(0, 1.0, 0), color.white, 2.0, 0.2)
+            return
+
+        if self.char_key == 'scout':
+            # Grappling Hook (Крюк-кошка из Deep Rock Galactic): физическое притягивание по тросу на 45м!
+            start_p = my_pos + Vec3(0, 1.5, 0)
+            anchor = self._find_grapple_anchor(start_p, camera.forward, max_dist=45.0 * nrg_mult)
+            self.grapple_active = True
+            self.grapple_target = anchor
+            self.grapple_timer = 0.72
+            self.scout_speed_buff = 3.2
+            VisualFX(anchor, color.cyan, 2.2, 0.35)
+            LightningBeam(start_p, anchor, color.cyan, 0.16)
             return
 
         VisualFX(my_pos + Vec3(0, 1, 0), color.cyan, 2.4, 0.3)
@@ -399,8 +472,20 @@ class SurvivorSkillsMixin:
             self.m1_cd = 0.0
             mist = HallowedMistZone(my_pos + self.forward * 3.0, self.base_damage * 0.65)
             game.stage_entities.append(mist)
+        elif self.char_key == 'm4a1':
+            self.dash_vector = self.forward * 25.0 * nrg_mult
+            self.dash_timer = 0.20
+            self.shield = min(float(self.max_hp), self.shield + 25.0)
+            VisualFX(my_pos + Vec3(0, 1.2, 0), rgb(95, 255, 135), 2.6, 0.25)
+            for clone in list(getattr(self, 'dummy_clones', [])):
+                if is_valid(clone):
+                    clone.command_burst_shot()
 
     def use_r_skill(self):
+        if getattr(self, 'skill_lock_timer', 0.0) > 0:
+            ctx.game.show_banner(f'НЕЙРОСЕТЬ ПЕРЕГРУЖЕНА ПОСЛЕ ПЕРЕСЕЛЕНИЯ ({self.skill_lock_timer:.1f}С)!', color.red, 1.2)
+            return
+
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
         self.r_cd = skills['r']['cd']
@@ -484,7 +569,6 @@ class SurvivorSkillsMixin:
                 )
                 self._broadcast_shot(spawn_pos, d, 62.0, self.base_damage * 2.4, 0.46, 'gwen', 2.5, True, 0, False)
         elif self.char_key == 'enforcer':
-            # Tear Gas Grenade: бросает газовую гранату перед собой
             target_pos = my_pos + self.forward * 10.0
             floor_y = game.get_surface_height(target_pos.x, target_pos.z, my_pos.y)
             gas_pos = Vec3(target_pos.x, floor_y, target_pos.z)
@@ -492,3 +576,37 @@ class SurvivorSkillsMixin:
             gas_zone = TearGasZone(gas_pos, self.base_damage * 0.85)
             game.stage_entities.append(gas_zone)
             game.show_banner('TEAR GAS DEPLOYED :: CROWD CONTROL!', rgb(140, 255, 100), 2.0)
+        elif self.char_key == 'scout':
+            # IFG & Flare Grenade: бросок гранаты ингибиторного поля
+            target_pos = my_pos + self.forward * 11.0
+            floor_y = game.get_surface_height(target_pos.x, target_pos.z, my_pos.y)
+            ifg_pos = Vec3(target_pos.x, floor_y, target_pos.z)
+            VisualFX(ifg_pos + Vec3(0, 1.2, 0), color.cyan, 6.5, 0.35)
+            ifg = IFGZone(ifg_pos, self.base_damage * 0.90)
+            game.stage_entities.append(ifg)
+            game.show_banner('ROCK AND STONE! :: IFG FIELD & FLARE DEPLOYED!', color.yellow, 2.2)
+        elif self.char_key == 'm4a1':
+            # Dummy Link Expansion: спавнит до 4 клонов одновременно (если уже 4 — лечит всех клонов и спавнит недостающих)
+            self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
+            used_slots = {c.slot_idx for c in self.dummy_clones}
+            spawned = 0
+            # За одно нажатие R призываем до 2 клонов (максимум 4 живых клона)
+            for slot in range(4):
+                if len(self.dummy_clones) >= 4 or spawned >= 2:
+                    break
+                if slot not in used_slots:
+                    clone = DummyClone(self, slot_idx=slot)
+                    self.dummy_clones.append(clone)
+                    game.stage_entities.append(clone)
+                    VisualFX(Vec3(*clone.position) + Vec3(0, 1.2, 0), rgb(95, 255, 135), 3.0, 0.3)
+                    spawned += 1
+
+            for c in self.dummy_clones:
+                c.hp = float(c.max_hp)
+                c.command_burst_shot()
+
+            active_links = 1 + len(self.dummy_clones)
+            game.show_banner(
+                f'DUMMY LINK ACTIVE :: ОТРЯД M4A1 [{active_links}x LINK] ({len(self.dummy_clones)}/4 КЛОНОВ)!',
+                rgb(95, 255, 135), 2.6
+            )

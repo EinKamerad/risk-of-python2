@@ -20,7 +20,7 @@ def input(key):
         if ctx.game.handle_menu_key(key):
             return
 
-        # В лобби клавиши 1-8 выбирают персонажа для просмотра его описания и модели
+        # В лобби клавиши 1-9 и 0 выбирают одного из 10 выживших
         if ctx.game.menu_state == 'lobby':
             key_map = {
                 '1': 'commando',
@@ -30,7 +30,9 @@ def input(key):
                 '5': 'v1',
                 '6': 'sol',
                 '7': 'gwen',
-                '8': 'enforcer'
+                '8': 'enforcer',
+                '9': 'scout',
+                '0': 'm4a1'
             }
             if key in key_map:
                 ctx.game.select_lobby_character(key_map[key])

@@ -34,11 +34,11 @@ class LobbyMixin:
         for k, w in self.char_icon_Widgets.items():
             if k == char_key:
                 w['border'].color = color.white
-                w['border'].scale = (0.104, 0.088)
+                w['border'].scale = (0.079, 0.084)
                 w['lbl'].color = color.yellow
             else:
                 w['border'].color = w['base_col']
-                w['border'].scale = (0.096, 0.080)
+                w['border'].scale = (0.073, 0.078)
                 w['lbl'].color = color.white
 
         self.lobby_char_line.color = cfg['body_color']

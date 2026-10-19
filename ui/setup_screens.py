@@ -141,12 +141,12 @@ class SetupScreensMixin:
         self.refresh_settings_labels()
 
         # ------------------------------------------
-        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (8 ВЫЖИВШИХ)
+        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (10 ВЫЖИВШИХ)
         # ------------------------------------------
         self.lobby_panel = Entity(parent=camera.ui, enabled=False)
 
         Text(
-            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 8]:',
+            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 9, 0]:',
             parent=self.lobby_panel, position=(-0.84, 0.355), z=-0.02,
             scale=0.82, color=rgb(170, 220, 255)
         )
@@ -161,24 +161,26 @@ class SetupScreensMixin:
             ('sol', '6', 'SOL', rgb(225, 45, 45)),
             ('gwen', '7', 'GWN', rgb(70, 200, 255)),
             ('enforcer', '8', 'ENF', rgb(85, 155, 245)),
+            ('scout', '9', 'SCT', rgb(245, 185, 40)),
+            ('m4a1', '0', 'M4', rgb(85, 235, 125)),
         ]
         for idx, (ckey, num_str, short_code, col) in enumerate(char_order):
-            ix = -0.80 + idx * 0.095
+            ix = -0.81 + idx * 0.077
             iy = 0.285
             border = Entity(
                 parent=self.lobby_panel, model='quad',
-                scale=(0.090, 0.080), position=(ix, iy), z=0.01, color=col
+                scale=(0.073, 0.078), position=(ix, iy), z=0.01, color=col
             )
             btn = Button(
                 text='', parent=self.lobby_panel,
-                scale=(0.080, 0.070), position=(ix, iy), z=-0.01,
+                scale=(0.065, 0.068), position=(ix, iy), z=-0.01,
                 color=rgb(22, 28, 42, 245), highlight_color=col
             )
             btn.on_click = lambda k=ckey: self.select_lobby_character(k)
             lbl = Text(
                 text=f"[{num_str}]\n{short_code}",
                 parent=self.lobby_panel, position=(ix, iy), z=-0.03,
-                origin=(0, 0), scale=0.74, color=color.white
+                origin=(0, 0), scale=0.66, color=color.white
             )
             self.char_icon_Widgets[ckey] = {'border': border, 'btn': btn, 'lbl': lbl, 'base_col': col}
 
