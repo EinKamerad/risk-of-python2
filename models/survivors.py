@@ -3,10 +3,11 @@ import math
 import random
 from config import rgb, SURVIVOR_CLASSES
 
+
 def build_survivor_mesh(parent_entity, char_key):
     cfg = SURVIVOR_CLASSES[char_key]
     root = Entity(parent=parent_entity, y=0)
-    parts = {'root': root, 'halo': None, 'bow': None}
+    parts = {'root': root, 'halo': None, 'bow': None, 'shield': None}
 
     left_hip = Entity(parent=root, position=(-0.22, 0.86, 0))
     right_hip = Entity(parent=root, position=(0.22, 0.86, 0))
@@ -100,11 +101,23 @@ def build_survivor_mesh(parent_entity, char_key):
         Entity(parent=torso, model='diamond', scale=(1.10, 0.65, 1.10), position=(0, -0.36, 0), color=rgb(32, 28, 46))
         Entity(parent=torso, model='diamond', scale=(1.16, 0.22, 1.16), position=(0, -0.54, 0), color=rgb(195, 240, 255), unlit=True)
 
+    elif char_key == 'enforcer':
+        # Массивный шлем-бастион с широким голубым визором и воротником брони
+        Entity(parent=head, model='cube', scale=(0.60, 0.56, 0.60), color=cfg['armor_color'])
+        Entity(parent=head, model='cube', scale=(0.54, 0.20, 0.38), position=(0, 0.04, 0.16), color=cfg['visor_color'], unlit=True)
+        Entity(parent=head, model='cube', scale=(0.64, 0.14, 0.64), y=0.26, color=cfg['body_color'])
+        # Тяжёлый бронированный воротник и нагрудник
+        Entity(parent=torso, model='cube', scale=(0.82, 0.26, 0.56), position=(0, 0.34, -0.02), color=cfg['armor_color'])
+        # Тактические мигалки на плечах (синяя и красная)
+        Entity(parent=torso, model='sphere', scale=(0.18, 0.12, 0.18), position=(-0.34, 0.48, 0), color=color.cyan, unlit=True)
+        Entity(parent=torso, model='sphere', scale=(0.18, 0.12, 0.18), position=(0.34, 0.48, 0), color=color.red, unlit=True)
+
     left_shoulder = Entity(parent=torso, position=(-0.48, 0.25, 0))
     right_shoulder = Entity(parent=torso, position=(0.48, 0.25, 0))
 
     for idx, sh in enumerate((left_shoulder, right_shoulder)):
-        Entity(parent=sh, model='diamond', scale=(0.40, 0.38, 0.40), y=0.08, color=cfg['armor_color'])
+        pad_scale = (0.54, 0.48, 0.54) if char_key == 'enforcer' else (0.40, 0.38, 0.40)
+        Entity(parent=sh, model='diamond', scale=pad_scale, y=0.08, color=cfg['armor_color'])
         arm = Entity(parent=sh, model='cube', scale=(0.18, 0.18, 0.56), position=(0, -0.12, 0.22), color=cfg['body_color'])
 
         if char_key == 'commando':
@@ -126,15 +139,35 @@ def build_survivor_mesh(parent_entity, char_key):
             Entity(parent=rev, model='cube', scale=(0.65, 0.38, 0.95), position=(0, 0.35, 0.15), color=color.cyan, unlit=True)
         elif char_key == 'sol' and idx == 1:
             sword = Entity(parent=sh, position=(0, -0.12, 0.52), rotation_x=15)
-            Entity(parent=sword, model='cube', scale=(0.10, 0.22, 1.15), z=0.45, color=rgb(200, 35, 35))
-            Entity(parent=sword, model='cube', scale=(0.12, 0.08, 1.10), position=(0, 0.08, 0.45), color=rgb(255, 165, 30), unlit=True)
+            Entity(parent=sword, model='cube', scale=(0.12, 0.24, 1.35), z=0.55, color=rgb(200, 35, 35))
+            Entity(parent=sword, model='cube', scale=(0.14, 0.09, 1.30), position=(0, 0.09, 0.55), color=rgb(255, 165, 30), unlit=True)
         elif char_key == 'gwen' and idx == 1:
             scis = Entity(parent=sh, position=(0, -0.12, 0.48))
-            Entity(parent=scis, model='diamond', scale=(0.06, 0.16, 1.15), position=(0, 0.10, 0.45), rotation_x=-14, color=rgb(110, 225, 255), unlit=True)
-            Entity(parent=scis, model='diamond', scale=(0.06, 0.16, 1.15), position=(0, -0.06, 0.45), rotation_x=14, color=rgb(195, 245, 255), unlit=True)
-            Entity(parent=scis, model='sphere', scale=0.22, position=(0, 0.02, 0.05), color=color.gold, unlit=True)
+            Entity(parent=scis, model='diamond', scale=(0.08, 0.18, 1.35), position=(0, 0.10, 0.52), rotation_x=-14, color=rgb(110, 225, 255), unlit=True)
+            Entity(parent=scis, model='diamond', scale=(0.08, 0.18, 1.35), position=(0, -0.06, 0.52), rotation_x=14, color=rgb(195, 245, 255), unlit=True)
+            Entity(parent=scis, model='sphere', scale=0.24, position=(0, 0.02, 0.05), color=color.gold, unlit=True)
+        elif char_key == 'enforcer':
+            if idx == 0:
+                # Силовой Щит Бастиона в левой руке
+                shield = Entity(parent=sh, position=(-0.28, -0.15, 0.45), rotation_y=-25)
+                Entity(parent=shield, model='cube', scale=(1.15, 1.65, 0.14), color=cfg['armor_color'])
+                Entity(parent=shield, model='cube', scale=(1.22, 1.72, 0.08), z=-0.02, color=cfg['body_color'])
+                # Энергетическое смотровое окно и силовое поле щита
+                Entity(parent=shield, model='cube', scale=(0.82, 0.28, 0.18), y=0.38, color=cfg['visor_color'], unlit=True)
+                Entity(parent=shield, model='diamond', scale=(0.45, 0.65, 0.18), y=-0.20, color=cfg['visor_color'], unlit=True)
+                aura = Entity(
+                    parent=shield, model='cube', scale=(1.65, 1.95, 0.06),
+                    z=0.10, color=rgb(70, 210, 255, 110), unlit=True, enabled=False
+                )
+                parts['shield'] = shield
+                parts['shield_aura'] = aura
+            else:
+                # Тяжёлый помповый дробовик Riot Shotgun в правой руке
+                sg = Entity(parent=sh, position=(0, -0.10, 0.55))
+                Entity(parent=sg, model='cube', scale=(0.16, 0.22, 0.95), z=0.25, color=rgb(35, 40, 50))
+                Entity(parent=sg, model='cube', scale=(0.20, 0.14, 0.55), position=(0, -0.08, 0.35), color=cfg['body_color'])
+                Entity(parent=sg, model='cube', scale=(0.12, 0.08, 0.85), position=(0, 0.12, 0.28), color=cfg['visor_color'], unlit=True)
 
     parts['left_arm'] = left_shoulder
     parts['right_arm'] = right_shoulder
     return parts
-

@@ -33,6 +33,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.grounded = True
         self.jumps_left = 1
         self.space_was_pressed = False
+        self.shift_was_pressed = False
 
         self.m1_cd = 0.0
         self.m2_cd = 0.0
@@ -44,6 +45,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.barrage_shots = 0
         self.barrage_timer = 0.0
         self.dragon_install_timer = 0.0
+        self.shield_stance = False
         self.predatory_timer = 0.0
         self.opal_timer = 0.0
         self.medkit_timer = 0.0
@@ -85,6 +87,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
     @property
     def move_speed(self):
         di_mult = 1.45 if self.dragon_install_timer > 0 else 1.0
+        stance_mult = 0.65 if self.shield_stance else 1.0
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
         flux_pen = 0.70 ** self.items.get('lunar_pauldron', 0)
         spd_bonus = (
@@ -93,14 +96,15 @@ class Survivor(Entity, SurvivorSkillsMixin):
             + 0.08 * self.items['energy_drink']
             + 0.12 * self.items['red_whip']
         )
-        return self.base_speed * spd_bonus * di_mult * tonic_mult * flux_pen
+        return self.base_speed * spd_bonus * di_mult * stance_mult * tonic_mult * flux_pen
 
     @property
     def fire_rate(self):
         di_mult = 1.65 if self.dragon_install_timer > 0 else 1.0
+        stance_mult = 1.45 if self.shield_stance else 1.0
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
         pred_bonus = 0.12 * self.items['predatory'] if self.predatory_timer > 0 else 0.0
-        return self.base_fire_rate * (1.0 + 0.15 * self.items['syringe'] + pred_bonus) * di_mult * tonic_mult
+        return self.base_fire_rate * (1.0 + 0.15 * self.items['syringe'] + pred_bonus) * di_mult * stance_mult * tonic_mult
 
     @property
     def block_chance(self):
@@ -139,7 +143,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.position += move_dir * self.move_speed * time.dt
 
             walk_cycle = time.time() * (11.0 + self.items['hoof'] * 1.2)
-            swing = math.sin(walk_cycle) * 38.0
+            swing = math.sin(walk_cycle) * (22.0 if self.shield_stance else 38.0)
             self.parts['left_leg'].rotation_x = swing
             self.parts['right_leg'].rotation_x = -swing
             self.parts['torso'].y = 1.26 + abs(math.cos(walk_cycle)) * 0.08
@@ -171,8 +175,10 @@ class Survivor(Entity, SurvivorSkillsMixin):
             if random.random() < 0.25:
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(255, 110, 20), 2.2, 0.18)
 
-        if held_keys['shift'] and self.shift_cd <= 0:
+        shift_down = bool(held_keys['shift'])
+        if shift_down and not self.shift_was_pressed and self.shift_cd <= 0:
             self.use_shift_skill()
+        self.shift_was_pressed = shift_down
 
         if held_keys['r'] and self.r_cd <= 0:
             self.use_r_skill()
@@ -203,8 +209,9 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 VisualFX(Vec3(*self.position), color.cyan, 1.8, 0.22)
         self.space_was_pressed = space_down
 
-        self.vel_y -= 26.0 * max(0.001, min(time.dt, 0.05))
-        self.y += self.vel_y * max(0.001, min(time.dt, 0.05))
+        dt_step = max(0.001, min(time.dt, 0.05))
+        self.vel_y -= 26.0 * dt_step
+        self.y += self.vel_y * dt_step
 
         floor_h = game.get_surface_height(self.position.x, self.position.z, self.y, prev_y=prev_y)
         if self.y <= floor_h:
@@ -218,7 +225,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.x = clamp(resolved.x, -bound, bound)
         self.z = clamp(resolved.z, -bound, bound)
 
-        # Пока идёт дуэль с Митриксом в Колизее, силовой купол удерживает игрока внутри арены
         if game.special_mode == 'moon' and game.mithrix_spawned and is_valid(game.active_boss) and self.y >= 105.0:
             arena_r = math.hypot(self.x, self.z)
             if arena_r > 52.5:
@@ -231,7 +237,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.grounded = True
                 self.jumps_left = self.max_jumps
 
-        # Защита камеры от проваливания сквозь текущий пол/платформу при взгляде вверх
         pitch_rad = math.radians(self.cam_pivot.rotation_x)
         base_dist = 8.8
         if pitch_rad < 0:
@@ -279,6 +284,11 @@ class Survivor(Entity, SurvivorSkillsMixin):
             return
 
         dmg = amount
+        # Protect & Serve (Стойка щита Enforcer снижает входящий урон на 65%)
+        if self.shield_stance:
+            dmg *= 0.35
+            VisualFX(Vec3(*self.position) + self.forward * 0.9 + Vec3(0, 1.3, 0), color.cyan, 1.8, 0.18)
+
         if self.is_moving and self.items['rose_buckler'] > 0:
             dmg *= (1.0 / (1.0 + 0.15 * self.items['rose_buckler']))
 
