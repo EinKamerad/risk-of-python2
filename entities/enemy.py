@@ -3,9 +3,10 @@ import math
 import random
 from config import ctx, rgb, is_valid, BOSS_TYPES, ITEM_POOL, PROGRESS
 from models.enemies import build_enemy_mesh
-from entities.fx import VisualFX, LightningBeam
+from entities.fx import VisualFX, LightningBeam, LunarShockwaveRing
 from entities.projectile import Projectile
 from entities.boss_ai import BossAIMixin
+from world.lunar import COLOSSEUM_Y
 
 
 class Enemy(Entity, BossAIMixin):
@@ -29,11 +30,15 @@ class Enemy(Entity, BossAIMixin):
         self.special_timer = random.uniform(3.5, 5.5)
         self.seed_offset = (self.net_id * 1.37) % 10.0
 
-        # Состояние фаз Митрикса
+        # Состояние 4 фаз Митрикса
         self.phase = 1
+        self.phase_transition_timer = 0.0
         self.sky_leap_state = 0
         self.sky_leap_timer = 0.0
+        self.sky_leap_target = Vec3(0, COLOSSEUM_Y, 0)
+        self.telegraph_ring = None
         self.stolen_items = []
+        self.reclaim_accum = 0.0
 
         self.bleed_timer = 0.0
         self.bleed_tick = 0.0
@@ -49,15 +54,26 @@ class Enemy(Entity, BossAIMixin):
             'golem': (95.0, 18.0, 3.8, 28, 1.8, 1.55),
             'imp': (52.0, 13.5, 7.2, 24, 1.3, 1.20),
             'greater_wisp': (82.0, 16.5, 4.0, 32, 2.7, 1.55),
-            'lunar_chimera': (90.0, 18.0, 5.4, 35, 2.5, 1.45),
+            'lunar_chimera': (110.0, 18.0, 6.0, 38, 2.5, 1.45),
             'boss': (450.0, 22.0, 3.5, 130, 2.8, 2.70),
             'vagrant': (480.0, 20.0, 3.8, 140, 3.8, 2.90),
             'overlord': (520.0, 24.0, 5.2, 150, 2.9, 2.75),
-            'mithrix': (1150.0, 28.0, 7.4, 500, 2.8, 2.40),
+            'mithrix': (1950.0, 26.0, 8.2, 600, 2.8, 2.55),
         }
         hp_b, dmg_b, spd_b, gold_b, hh, hr = stats_table.get(enemy_type, stats_table['lemurian'])
-        self.max_hp = hp_b * coeff
-        self.damage = dmg_b * coeff
+
+        # Для Митрикса гарантируем минимальный порог силы Финального Босса (даже при раннем заходе после 2 этажа)
+        if enemy_type == 'mithrix':
+            game = ctx.game
+            item_cnt = sum(game.player.items.values()) if (game and is_valid(game.player)) else 0
+            eff_coeff = max(coeff, 2.35) * (1.0 + 0.045 * item_cnt)
+            self.mithrix_eff_coeff = eff_coeff
+            self.max_hp = hp_b * eff_coeff
+            self.damage = dmg_b * max(coeff, 1.85)
+        else:
+            self.max_hp = hp_b * coeff
+            self.damage = dmg_b * coeff
+
         self.speed = spd_b
         self.gold_reward = int(gold_b * coeff)
         self.hit_height = hh
@@ -83,53 +99,105 @@ class Enemy(Entity, BossAIMixin):
         dist, t_pos, is_local = candidates[0]
         return t_pos, dist, is_local
 
-    def trigger_mithrix_phase_4(self, game):
-        """4-я фаза Митрикса: Босс забирает все предметы игрока, и их нужно выбивать обратно!"""
-        self.phase = 4
-        self.hp = self.max_hp * 0.42
-        self.parts['phase_ring'].enabled = True
-        self.parts['phase_ring'].color = color.magenta
-        self.parts['hammer_aura'].color = color.magenta
-        self.parts['core'].color = color.magenta
+    def advance_mithrix_phase(self, game):
+        """Переводит Митрикса в следующую фазу с новой полной полоской HP (100%)"""
+        my_pos = Vec3(*self.position)
+        self.phase += 1
+        self.phase_transition_timer = 2.0
+        self.sky_leap_state = 0
+        if self.telegraph_ring and not self.telegraph_ring.is_empty():
+            destroy(self.telegraph_ring)
+            self.telegraph_ring = None
 
-        if is_valid(game.player):
-            p = game.player
-            my_pos = Vec3(*self.position) + Vec3(0, 3.0, 0)
-            p_pos = Vec3(*p.position) + Vec3(0, 1.5, 0)
-            for k, cnt in list(p.items.items()):
-                for _ in range(cnt):
-                    self.stolen_items.append(k)
-                p.items[k] = 0
-            p.item_order.clear()
-            random.shuffle(self.stolen_items)
-            game.refresh_inventory_hud()
-            LightningBeam(p_pos, my_pos, color.magenta, 0.55)
-            VisualFX(my_pos, color.magenta, 12.0, 0.55)
+        eff_c = getattr(self, 'mithrix_eff_coeff', max(self.coeff, 2.35))
 
-        game.boss_title.text = 'MITHRIX :: PHASE 4 - ITEM STEAL (HIT HIM TO RECLAIM ITEMS!)'
-        game.show_banner('МИТРИКС ЗАБРАЛ ВАШИ ПРЕДМЕТЫ! АТАКУЙТЕ ЕГО, ЧТОБЫ ВЕРНУТЬ ИХ!', color.magenta, 4.5)
+        if self.phase == 2:
+            self.max_hp = 2250.0 * eff_c
+            self.hp = self.max_hp
+            self.position = Vec3(0, COLOSSEUM_Y, 0)
+            VisualFX(Vec3(0, COLOSSEUM_Y + 2.5, 0), color.cyan, 14.0, 0.55)
+            LunarShockwaveRing(Vec3(0, COLOSSEUM_Y, 0), self.damage, max_radius=55.0, speed=22.0)
+            # Призыв стражей — Лунных Химер на арену Колизея
+            for ang_deg in (0, 120, 240):
+                r = math.radians(ang_deg)
+                c_pos = Vec3(math.cos(r) * 28.0, COLOSSEUM_Y, math.sin(r) * 28.0)
+                chimera = Enemy(c_pos, 'lunar_chimera', self.coeff)
+                game.enemies.append(chimera)
+            game.boss_title.text = 'MITHRIX [PHASE 2/4] :: CRUSHING SKY LEAP & CHIMERA VANGUARD'
+            game.show_banner('МИТРИКС (ФАЗА 2/4): НЕБЕСНЫЙ ОБВАЛ И СТРАЖИ ЛУНЫ!', color.cyan, 3.8)
+
+        elif self.phase == 3:
+            self.max_hp = 2500.0 * eff_c
+            self.hp = self.max_hp
+            self.position = Vec3(0, COLOSSEUM_Y, 0)
+            self.parts['phase_ring'].enabled = True
+            self.parts['hammer_aura'].color = color.white
+            VisualFX(Vec3(0, COLOSSEUM_Y + 2.5, 0), color.white, 16.0, 0.6)
+            LunarShockwaveRing(Vec3(0, COLOSSEUM_Y, 0), self.damage * 1.2, max_radius=55.0, speed=25.0)
+            for ang_deg in (60, 240):
+                r = math.radians(ang_deg)
+                c_pos = Vec3(math.cos(r) * 32.0, COLOSSEUM_Y, math.sin(r) * 32.0)
+                chimera = Enemy(c_pos, 'lunar_chimera', self.coeff * 1.15)
+                game.enemies.append(chimera)
+            game.boss_title.text = 'MITHRIX [PHASE 3/4] :: LUNAR REVOLVING PILLARS'
+            game.show_banner('МИТРИКС (ФАЗА 3/4): ЛУННЫЕ РАЗРЕЗЫ КОЛИЗЕЯ!', rgb(135, 240, 255), 3.8)
+
+        elif self.phase == 4:
+            self.max_hp = 1450.0 * max(self.coeff, 2.0)
+            self.hp = self.max_hp
+            self.position = Vec3(0, COLOSSEUM_Y, 0)
+            self.parts['phase_ring'].enabled = True
+            self.parts['phase_ring'].color = color.magenta
+            self.parts['hammer_aura'].color = color.magenta
+            self.parts['core'].color = color.magenta
+
+            if is_valid(game.player):
+                p = game.player
+                p_pos = Vec3(*p.position) + Vec3(0, 1.5, 0)
+                for k, cnt in list(p.items.items()):
+                    for _ in range(cnt):
+                        self.stolen_items.append(k)
+                    p.items[k] = 0
+                p.item_order.clear()
+                random.shuffle(self.stolen_items)
+                p.hp = min(float(p.max_hp), max(p.hp, float(p.max_hp) * 0.85))
+                game.refresh_inventory_hud()
+                LightningBeam(p_pos, Vec3(0, COLOSSEUM_Y + 3.0, 0), color.magenta, 0.65)
+                VisualFX(Vec3(0, COLOSSEUM_Y + 3.0, 0), color.magenta, 15.0, 0.6)
+
+            game.boss_title.text = 'MITHRIX [PHASE 4/4] :: ITEM STEAL (HIT HIM TO RECLAIM YOUR ITEMS!)'
+            game.show_banner('МИТРИКС ЗАБРАЛ ВАШИ ПРЕДМЕТЫ! АТАКУЙТЕ ЕГО, ЧТОБЫ ВЫБИТЬ ИХ ОБРАТНО!', color.magenta, 4.8)
+
+        if not self.hp_bar.is_empty():
+            self.hp_bar.scale_x = 1.0
 
     def take_damage(self, amount, from_network=False):
-        if not is_valid(self) or self.sky_leap_state == 1:
+        if not is_valid(self) or self.sky_leap_state == 1 or self.phase_transition_timer > 0:
             return
 
         game = ctx.game
+        # Адаптивная броня Митрикса: один удар не может снять больше 8.5% HP текущей фазы
+        if self.enemy_type == 'mithrix':
+            amount = min(amount, self.max_hp * 0.085)
+
         self.hp -= amount
 
-        # Переход Митрикса в 4-ю фазу (кража предметов) вместо смерти
-        if self.enemy_type == 'mithrix' and self.phase < 4 and self.hp <= self.max_hp * 0.10:
-            self.trigger_mithrix_phase_4(game)
-            return
-
-        # В 4-й фазе каждое попадание возвращает игроку украденный предмет!
+        # В 4-й фазе урон по Митриксу постепенно возвращает украденные предметы игроку
         if self.enemy_type == 'mithrix' and self.phase == 4 and self.stolen_items and is_valid(game.player):
-            if random.random() < 0.55 or self.hp <= 0:
+            self.reclaim_accum += amount
+            threshold = max(18.0, self.max_hp / max(4.0, len(self.stolen_items) + 2.0))
+            while self.reclaim_accum >= threshold and self.stolen_items:
+                self.reclaim_accum -= threshold
                 ret_key = self.stolen_items.pop(0)
                 if ret_key not in game.player.item_order:
                     game.player.item_order.append(ret_key)
                 game.player.items[ret_key] += 1
                 game.refresh_inventory_hud()
-                LightningBeam(Vec3(*self.position) + Vec3(0, 2.8, 0), Vec3(*game.player.position) + Vec3(0, 1.2, 0), ITEM_POOL[ret_key]['color'], 0.25)
+                LightningBeam(
+                    Vec3(*self.position) + Vec3(0, 2.8, 0),
+                    Vec3(*game.player.position) + Vec3(0, 1.2, 0),
+                    ITEM_POOL[ret_key]['color'], 0.28
+                )
 
         if not self.hp_bar.is_empty():
             self.hp_bar.scale_x = max(0.0, self.hp / self.max_hp)
@@ -138,6 +206,9 @@ class Enemy(Entity, BossAIMixin):
             ctx.net.broadcast({'type': 'enemy_damage', 'net_id': self.net_id, 'amount': round(amount, 1)})
 
         if self.hp <= 0:
+            if self.enemy_type == 'mithrix' and self.phase < 4:
+                self.advance_mithrix_phase(game)
+                return
             self.die(from_network=from_network)
 
     def die(self, from_network=False):
@@ -145,6 +216,9 @@ class Enemy(Entity, BossAIMixin):
         if self.is_dead or self.is_empty():
             return
         self.is_dead = True
+
+        if self.telegraph_ring and not self.telegraph_ring.is_empty():
+            destroy(self.telegraph_ring)
 
         death_pos = Vec3(*self.position)
 
@@ -162,12 +236,10 @@ class Enemy(Entity, BossAIMixin):
             it = p.items
             p.gold += self.gold_reward
 
-            # Шанс выпадения Лунной Монеты
             if self.is_boss or random.random() < 0.08:
                 gain = 5 if self.enemy_type == 'mithrix' else (1 if not self.is_boss else 2)
                 game.lunar_coins += gain
 
-            # Возврат всех оставшихся украденных предметов после смерти Митрикса
             if self.enemy_type == 'mithrix' and self.stolen_items:
                 for ret_key in self.stolen_items:
                     if ret_key not in p.item_order:
@@ -207,10 +279,11 @@ class Enemy(Entity, BossAIMixin):
         if self.is_boss:
             PROGRESS.boss_kills += 1
             game.unlock_achievement('ach_boss')
-            game.active_boss = None
             if self.enemy_type == 'mithrix':
+                game.active_boss = None
                 game.on_mithrix_defeated(death_pos)
             elif not from_network:
+                game.active_boss = None
                 game.spawn_item_drop(death_pos)
 
         PROGRESS.save()
@@ -248,13 +321,14 @@ class Enemy(Entity, BossAIMixin):
         my_pos = Vec3(*self.position)
         self.look_at_2d(p_pos, 'y')
         t = time.time() + self.seed_offset
+        floor_y = game.get_surface_height(my_pos.x, my_pos.z, my_pos.y)
 
         if self.enemy_type == 'lemurian':
             self.parts['tail'].rotation_y = math.sin(t * 6) * 22
             if dist > 1.7:
                 self.position += self.forward * eff_speed * time.dt
-                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.7, 0)
-                self.position = Vec3(resolved.x, 0, resolved.z)
+                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.7, floor_y)
+                self.position = Vec3(resolved.x, floor_y, resolved.z)
                 leg_swing = math.sin(t * 11) * 36
                 self.parts['left_leg'].rotation_x = leg_swing
                 self.parts['right_leg'].rotation_x = -leg_swing
@@ -273,8 +347,8 @@ class Enemy(Entity, BossAIMixin):
         elif self.enemy_type == 'beetle':
             if dist > 1.65:
                 self.position += self.forward * eff_speed * time.dt
-                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.65, 0)
-                self.position = Vec3(resolved.x, 0, resolved.z)
+                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.65, floor_y)
+                self.position = Vec3(resolved.x, floor_y, resolved.z)
                 scurry = math.sin(t * 16) * 30
                 self.parts['left_leg'].rotation_x = scurry
                 self.parts['right_leg'].rotation_x = -scurry
@@ -328,8 +402,8 @@ class Enemy(Entity, BossAIMixin):
         elif self.enemy_type == 'golem':
             if dist > 12.0:
                 self.position += self.forward * eff_speed * time.dt
-                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.95, 0)
-                self.position = Vec3(resolved.x, 0, resolved.z)
+                resolved = game.resolve_horizontal_collision(Vec3(*self.position), 0.95, floor_y)
+                self.position = Vec3(resolved.x, floor_y, resolved.z)
                 stomp = math.sin(t * 5.5) * 26
                 self.parts['left_leg'].rotation_x = stomp
                 self.parts['right_leg'].rotation_x = -stomp
@@ -346,8 +420,8 @@ class Enemy(Entity, BossAIMixin):
                 self.special_timer = 4.2
                 VisualFX(my_pos + Vec3(0, 1.2, 0), rgb(245, 35, 70), 2.5, 0.25)
                 jump_pos = my_pos + self.forward * min(dist - 1.5, 9.0)
-                resolved = game.resolve_horizontal_collision(jump_pos, 0.7, 0)
-                self.position = Vec3(resolved.x, 0, resolved.z)
+                resolved = game.resolve_horizontal_collision(jump_pos, 0.7, floor_y)
+                self.position = Vec3(resolved.x, floor_y, resolved.z)
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(245, 35, 70), 2.5, 0.25)
 
             if dist > 1.8:
