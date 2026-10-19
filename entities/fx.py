@@ -18,6 +18,91 @@ class VisualFX(Entity):
         destroy(self, delay=duration + 0.05)
 
 
+class MeleeSlashFX(Entity):
+    """Визуальная 3D-дуга взмаха мечом / разреза ножницами / удара щитом перед игроком"""
+    def __init__(self, pos, forward_dir, rot_y, slash_color=color.orange, arc_width=3.6, reach=2.8, tilt_z=0.0, scissor_cross=False):
+        spawn_p = Vec3(*pos) + Vec3(0, 1.35, 0) + Vec3(*forward_dir) * (reach * 0.48)
+        super().__init__(
+            position=spawn_p,
+            rotation=(0, rot_y, tilt_z)
+        )
+        blade1 = Entity(
+            parent=self, model='diamond',
+            scale=(arc_width, 0.18, reach * 0.72),
+            color=slash_color, unlit=True
+        )
+        core1 = Entity(
+            parent=self, model='diamond',
+            scale=(arc_width * 0.75, 0.26, reach * 0.45),
+            color=color.white, unlit=True
+        )
+        blade1.animate_scale_x(arc_width * 1.35, duration=0.18)
+        blade1.animate_scale_z(0.05, duration=0.18)
+        core1.animate_scale_z(0.02, duration=0.16)
+
+        if scissor_cross:
+            # Второе перекрестное лезвие для ножниц Гвен
+            blade2 = Entity(
+                parent=self, model='diamond',
+                scale=(arc_width, 0.18, reach * 0.72),
+                rotation_z=-tilt_z * 2.0 if tilt_z != 0 else 36.0,
+                color=rgb(195, 245, 255), unlit=True
+            )
+            blade2.animate_scale_x(arc_width * 1.35, duration=0.18)
+            blade2.animate_scale_z(0.05, duration=0.18)
+
+        destroy(self, delay=0.19)
+
+
+class TearGasZone(Entity):
+    """Газовая завеса Enforcer [R]: замедляет врагов на 50%, оглушает при броске и наносит периодический урон"""
+    def __init__(self, center_pos, tick_dmg):
+        super().__init__(position=Vec3(center_pos[0], center_pos[1] + 0.1, center_pos[2]))
+        self.tick_dmg = tick_dmg
+        self.duration = 6.0
+        self.tick_timer = 0.0
+        self.radius = 8.5
+
+        self.ring = Entity(
+            parent=self, model='sphere',
+            scale=(self.radius * 2, 0.14, self.radius * 2),
+            color=rgb(130, 245, 95, 75), unlit=True
+        )
+        self.clouds_hub = Entity(parent=self)
+        for i in range(7):
+            ang = (i / 7.0) * math.pi * 2
+            dist = self.radius * 0.55
+            Entity(
+                parent=self.clouds_hub, model='sphere',
+                position=(math.cos(ang) * dist, 1.1, math.sin(ang) * dist),
+                scale=(4.2, 2.2, 4.2),
+                color=rgb(145, 255, 110, 55), unlit=True
+            )
+
+    def update(self):
+        game = ctx.game
+        if not game or not game.running or self.is_empty():
+            return
+        self.duration -= time.dt
+        if not self.clouds_hub.is_empty():
+            self.clouds_hub.rotation_y += 35 * time.dt
+        if self.duration <= 0:
+            destroy(self)
+            return
+
+        self.tick_timer -= time.dt
+        if self.tick_timer <= 0:
+            self.tick_timer = 0.45
+            my_pos = Vec3(*self.position)
+            for e in list(game.enemies):
+                if is_valid(e):
+                    e_pos = Vec3(*e.position)
+                    if distance_2d(e_pos, my_pos) <= self.radius and abs(e_pos.y - my_pos.y) <= 5.0:
+                        e.slow_timer = max(e.slow_timer, 1.5)
+                        e.take_damage(self.tick_dmg)
+                        VisualFX(e_pos + Vec3(0, 1.1, 0), rgb(140, 255, 100), 1.5, 0.2)
+
+
 class LightningBeam(Entity):
     def __init__(self, start_pos, end_pos, beam_color=color.magenta, thickness=0.18):
         mid = (start_pos + end_pos) * 0.5

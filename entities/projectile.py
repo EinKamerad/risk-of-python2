@@ -4,11 +4,132 @@ import random
 from config import ctx, rgb, is_valid
 from entities.fx import VisualFX, LightningBeam
 
+
+def apply_player_hit_effects(target, hit_pos, base_dmg, hit_color=color.yellow, aoe=0.0, lifesteal=0.0, can_proc=True):
+    """Универсальный расчёт урона и срабатывания предметов (работает и для снарядов, и для ударов ближнего боя)"""
+    game = ctx.game
+    if not game or not is_valid(target) or not is_valid(game.player):
+        return
+
+    target_pos = Vec3(*target.position)
+    p = game.player
+    it = p.items
+    luck_bonus = 1.0 + 0.12 * it['clover']
+
+    dmg = base_dmg
+
+    # Crowbar: +50% урона врагам с >85% HP
+    if it['crowbar'] > 0 and target.hp >= target.max_hp * 0.85:
+        dmg *= (1.0 + 0.50 * it['crowbar'])
+
+    # Armor-Piercing Rounds: +20% урона по Боссам
+    if it['ap_rounds'] > 0 and target.is_boss:
+        dmg *= (1.0 + 0.20 * it['ap_rounds'])
+
+    # Focus Crystal: +20% урона вблизи (<13м)
+    if it['focus_crystal'] > 0 and distance(Vec3(*p.position), target_pos) <= 13.0:
+        dmg *= (1.0 + 0.20 * it['focus_crystal'])
+
+    # Brilliant Behemoth: +25% урона и взрывной радиус
+    eff_aoe = aoe
+    if it['behemoth'] > 0:
+        dmg *= (1.0 + 0.25 * it['behemoth'])
+        eff_aoe = max(eff_aoe, 2.5 + 1.0 * it['behemoth'])
+
+    # Критический удар + Harvester's Scythe + Predatory Instincts
+    is_crit = random.random() < p.crit_chance
+    if is_crit:
+        dmg *= 2.0
+        VisualFX(hit_pos, rgb(255, 45, 70), max_scale=2.2, duration=0.25)
+        if it['harvester_scythe'] > 0:
+            p.hp = min(float(p.max_hp), p.hp + 2.0 + 4.0 * it['harvester_scythe'])
+        if it['predatory'] > 0:
+            p.predatory_timer = 3.0
+
+    # Leeching Seed + врождённый вампиризм навыка
+    heal_amt = lifesteal + (1.5 * it['leeching_seed'])
+    if heal_amt > 0:
+        p.hp = min(float(p.max_hp), p.hp + heal_amt)
+
+    # Статусы на враге до удара
+    if it['chronobauble'] > 0:
+        target.slow_timer = max(target.slow_timer, 2.5 * it['chronobauble'])
+
+    if it['stun_grenade'] > 0 and not target.is_boss:
+        if random.random() < min(0.65, 0.10 * it['stun_grenade'] * luck_bonus):
+            target.stun_timer = max(target.stun_timer, 1.5)
+            VisualFX(target_pos + Vec3(0, 1.5, 0), color.white, 2.0, 0.25)
+
+    if it['tri_tip'] > 0:
+        if random.random() < min(1.0, 0.15 * it['tri_tip'] * luck_bonus):
+            target.bleed_timer = max(target.bleed_timer, 3.0)
+            target.bleed_dps = max(target.bleed_dps, p.base_damage * 0.6 * it['tri_tip'])
+
+    target.take_damage(dmg)
+    VisualFX(hit_pos, hit_color, max_scale=1.3 if eff_aoe == 0 else eff_aoe * 1.35, duration=0.22)
+
+    if eff_aoe > 0:
+        for other in list(game.enemies):
+            if other is not target and is_valid(other):
+                if distance(Vec3(*other.position), target_pos) <= eff_aoe:
+                    other.take_damage(dmg * 0.65)
+
+    if not can_proc or not is_valid(p):
+        return
+
+    # Sticky Bomb
+    if it['sticky_bomb'] > 0 and random.random() < min(0.75, 0.12 * it['sticky_bomb'] * luck_bonus):
+        VisualFX(target_pos + Vec3(0, 1.0, 0), color.orange, 3.8, 0.3)
+        if is_valid(target):
+            target.take_damage(p.base_damage * (1.4 * it['sticky_bomb']))
+
+    # Kjaro's Band & Runald's Band
+    if (dmg >= p.base_damage * 1.8 or random.random() < 0.16 * luck_bonus):
+        if it['kjaro_band'] > 0:
+            VisualFX(target_pos + Vec3(0, 1.2, 0), rgb(255, 100, 20), 5.2, 0.38)
+            for other in list(game.enemies):
+                if is_valid(other) and distance(Vec3(*other.position), target_pos) <= 4.8:
+                    other.take_damage(p.base_damage * (1.5 * it['kjaro_band']))
+        if it['runald_band'] > 0 and is_valid(target):
+            VisualFX(target_pos + Vec3(0, 1.2, 0), color.cyan, 4.0, 0.35)
+            target.slow_timer = 4.0
+            target.take_damage(p.base_damage * (1.8 * it['runald_band']))
+
+    # AtG Missile Mk. 1
+    if it['atg_missile'] > 0 and random.random() < min(0.75, 0.12 * it['atg_missile'] * luck_bonus):
+        m_pos = Vec3(*p.position) + Vec3(0, 2.2, 0)
+        Projectile(
+            pos=m_pos, direction=Vec3(0, 0.6, 0.8).normalized(),
+            speed=48.0, damage=p.base_damage * (2.2 * it['atg_missile']),
+            scale_val=0.36, proj_color=rgb(115, 255, 80),
+            is_player=True, homing=True, can_proc=False
+        )
+
+    # Ukulele
+    ukulele_stacks = it['ukulele']
+    if ukulele_stacks > 0 and random.random() < min(0.85, 0.25 * luck_bonus):
+        max_targets = 2 + ukulele_stacks * 2
+        chain_radius = 13.0 + ukulele_stacks * 2.5
+        chained = 0
+        prev_pos = target_pos + Vec3(0, 1.2, 0)
+        for other in list(game.enemies):
+            if other is not target and is_valid(other):
+                other_pos = Vec3(*other.position) + Vec3(0, 1.2, 0)
+                if distance(other_pos, prev_pos) <= chain_radius:
+                    other.take_damage(dmg * 0.8)
+                    LightningBeam(prev_pos, other_pos, color.magenta)
+                    VisualFX(other_pos, color.magenta, 2.0, 0.25)
+                    prev_pos = other_pos
+                    chained += 1
+                    if chained >= max_targets:
+                        break
+
+
 class Projectile(Entity):
     def __init__(
         self, pos, direction, speed, damage, scale_val, proj_color,
         is_player=True, aoe=0.0, pierce=False, bounces=0, homing=False,
-        is_remote=False, lifesteal=0.0, can_proc=True
+        is_remote=False, lifesteal=0.0, can_proc=True, max_lifetime=3.4
     ):
         super().__init__(
             model='sphere',
@@ -30,7 +151,7 @@ class Projectile(Entity):
         self.lifesteal = lifesteal
         self.can_proc = can_proc
         self.hit_memory = set()
-        self.lifetime = 3.4
+        self.lifetime = max_lifetime
         self.is_destroyed = False
 
     def safe_destroy(self):
@@ -115,120 +236,12 @@ class Projectile(Entity):
                     self.safe_destroy()
 
     def on_hit_enemy(self, target, proj_pos):
-        game = ctx.game
-        if not is_valid(target) or not is_valid(game.player):
-            return
-
-        target_pos = Vec3(*target.position)
-        p = game.player
-        it = p.items
-        luck_bonus = 1.0 + 0.12 * it['clover']
-
-        dmg = self.damage
-
-        # Crowbar: +50% урона врагам с >85% HP
-        if it['crowbar'] > 0 and target.hp >= target.max_hp * 0.85:
-            dmg *= (1.0 + 0.50 * it['crowbar'])
-
-        # Armor-Piercing Rounds: +20% урона по Боссам
-        if it['ap_rounds'] > 0 and target.is_boss:
-            dmg *= (1.0 + 0.20 * it['ap_rounds'])
-
-        # Focus Crystal: +20% урона вблизи (<13м)
-        if it['focus_crystal'] > 0 and distance(Vec3(*p.position), target_pos) <= 13.0:
-            dmg *= (1.0 + 0.20 * it['focus_crystal'])
-
-        # Brilliant Behemoth: +35% урона и взрывной радиус
-        eff_aoe = self.aoe
-        if it['behemoth'] > 0:
-            dmg *= (1.0 + 0.25 * it['behemoth'])
-            eff_aoe = max(eff_aoe, 2.5 + 1.0 * it['behemoth'])
-
-        # Критический удар + Harvester's Scythe + Predatory Instincts
-        is_crit = random.random() < p.crit_chance
-        if is_crit:
-            dmg *= 2.0
-            VisualFX(proj_pos, rgb(255, 45, 70), max_scale=2.2, duration=0.25)
-            if it['harvester_scythe'] > 0:
-                p.hp = min(float(p.max_hp), p.hp + 2.0 + 4.0 * it['harvester_scythe'])
-            if it['predatory'] > 0:
-                p.predatory_timer = 3.0
-
-        # Leeching Seed + врождённый вампиризм навыка
-        heal_amt = self.lifesteal + (1.5 * it['leeching_seed'])
-        if heal_amt > 0:
-            p.hp = min(float(p.max_hp), p.hp + heal_amt)
-
-        # Статусы на враге до удара
-        if it['chronobauble'] > 0:
-            target.slow_timer = max(target.slow_timer, 2.5 * it['chronobauble'])
-
-        if it['stun_grenade'] > 0 and not target.is_boss:
-            if random.random() < min(0.65, 0.10 * it['stun_grenade'] * luck_bonus):
-                target.stun_timer = max(target.stun_timer, 1.5)
-                VisualFX(target_pos + Vec3(0, 1.5, 0), color.white, 2.0, 0.25)
-
-        if it['tri_tip'] > 0:
-            if random.random() < min(1.0, 0.15 * it['tri_tip'] * luck_bonus):
-                target.bleed_timer = max(target.bleed_timer, 3.0)
-                target.bleed_dps = max(target.bleed_dps, p.base_damage * 0.6 * it['tri_tip'])
-
-        target.take_damage(dmg)
-        VisualFX(proj_pos, self.color, max_scale=1.3 if eff_aoe == 0 else eff_aoe * 1.35, duration=0.22)
-
-        if eff_aoe > 0:
-            for other in list(game.enemies):
-                if other is not target and is_valid(other):
-                    if distance(Vec3(*other.position), target_pos) <= eff_aoe:
-                        other.take_damage(dmg * 0.65)
-
-        if not self.can_proc or not is_valid(p):
-            return
-
-        # Sticky Bomb
-        if it['sticky_bomb'] > 0 and random.random() < min(0.75, 0.12 * it['sticky_bomb'] * luck_bonus):
-            VisualFX(target_pos + Vec3(0, 1.0, 0), color.orange, 3.8, 0.3)
-            if is_valid(target):
-                target.take_damage(p.base_damage * (1.4 * it['sticky_bomb']))
-
-        # Kjaro's Band & Runald's Band (прокают на мощных ударах или с шансом)
-        if (dmg >= p.base_damage * 1.8 or random.random() < 0.16 * luck_bonus):
-            if it['kjaro_band'] > 0:
-                VisualFX(target_pos + Vec3(0, 1.2, 0), rgb(255, 100, 20), 5.2, 0.38)
-                for other in list(game.enemies):
-                    if is_valid(other) and distance(Vec3(*other.position), target_pos) <= 4.8:
-                        other.take_damage(p.base_damage * (1.5 * it['kjaro_band']))
-            if it['runald_band'] > 0 and is_valid(target):
-                VisualFX(target_pos + Vec3(0, 1.2, 0), color.cyan, 4.0, 0.35)
-                target.slow_timer = 4.0
-                target.take_damage(p.base_damage * (1.8 * it['runald_band']))
-
-        # AtG Missile Mk. 1
-        if it['atg_missile'] > 0 and random.random() < min(0.75, 0.12 * it['atg_missile'] * luck_bonus):
-            m_pos = Vec3(*p.position) + Vec3(0, 2.2, 0)
-            Projectile(
-                pos=m_pos, direction=Vec3(0, 0.6, 0.8).normalized(),
-                speed=48.0, damage=p.base_damage * (2.2 * it['atg_missile']),
-                scale_val=0.36, proj_color=rgb(115, 255, 80),
-                is_player=True, homing=True, can_proc=False
-            )
-
-        # Ukulele
-        ukulele_stacks = it['ukulele']
-        if ukulele_stacks > 0 and random.random() < min(0.85, 0.25 * luck_bonus):
-            max_targets = 2 + ukulele_stacks * 2
-            chain_radius = 13.0 + ukulele_stacks * 2.5
-            chained = 0
-            prev_pos = target_pos + Vec3(0, 1.2, 0)
-            for other in list(game.enemies):
-                if other is not target and is_valid(other):
-                    other_pos = Vec3(*other.position) + Vec3(0, 1.2, 0)
-                    if distance(other_pos, prev_pos) <= chain_radius:
-                        other.take_damage(dmg * 0.8)
-                        LightningBeam(prev_pos, other_pos, color.magenta)
-                        VisualFX(other_pos, color.magenta, 2.0, 0.25)
-                        prev_pos = other_pos
-                        chained += 1
-                        if chained >= max_targets:
-                            break
-
+        apply_player_hit_effects(
+            target=target,
+            hit_pos=proj_pos,
+            base_dmg=self.damage,
+            hit_color=self.color,
+            aoe=self.aoe,
+            lifesteal=self.lifesteal,
+            can_proc=self.can_proc
+        )

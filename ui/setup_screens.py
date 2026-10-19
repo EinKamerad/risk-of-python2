@@ -1,6 +1,7 @@
 from ursina import *
 from config import rgb, is_valid, clear_children, ITEM_POOL
 
+
 class SetupScreensMixin:
     def setup_ui(self):
         self.header_panel = Entity(parent=camera.ui)
@@ -140,12 +141,12 @@ class SetupScreensMixin:
         self.refresh_settings_labels()
 
         # ------------------------------------------
-        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (SINGLE & CO-OP)
+        # 4. ЛОББИ ВЫБОРА ПЕРСОНАЖА (8 ВЫЖИВШИХ)
         # ------------------------------------------
         self.lobby_panel = Entity(parent=camera.ui, enabled=False)
 
         Text(
-            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 7]:',
+            text='ВЫБЕРИТЕ ПЕРСОНАЖА [Клавиши 1 - 8]:',
             parent=self.lobby_panel, position=(-0.84, 0.355), z=-0.02,
             scale=0.82, color=rgb(170, 220, 255)
         )
@@ -159,24 +160,25 @@ class SetupScreensMixin:
             ('v1', '5', 'V1', rgb(55, 130, 245)),
             ('sol', '6', 'SOL', rgb(225, 45, 45)),
             ('gwen', '7', 'GWN', rgb(70, 200, 255)),
+            ('enforcer', '8', 'ENF', rgb(85, 155, 245)),
         ]
         for idx, (ckey, num_str, short_code, col) in enumerate(char_order):
-            ix = -0.79 + idx * 0.106
+            ix = -0.80 + idx * 0.095
             iy = 0.285
             border = Entity(
                 parent=self.lobby_panel, model='quad',
-                scale=(0.098, 0.082), position=(ix, iy), z=0.01, color=col
+                scale=(0.090, 0.080), position=(ix, iy), z=0.01, color=col
             )
             btn = Button(
                 text='', parent=self.lobby_panel,
-                scale=(0.088, 0.072), position=(ix, iy), z=-0.01,
+                scale=(0.080, 0.070), position=(ix, iy), z=-0.01,
                 color=rgb(22, 28, 42, 245), highlight_color=col
             )
             btn.on_click = lambda k=ckey: self.select_lobby_character(k)
             lbl = Text(
                 text=f"[{num_str}]\n{short_code}",
                 parent=self.lobby_panel, position=(ix, iy), z=-0.03,
-                origin=(0, 0), scale=0.78, color=color.white
+                origin=(0, 0), scale=0.74, color=color.white
             )
             self.char_icon_Widgets[ckey] = {'border': border, 'btn': btn, 'lbl': lbl, 'base_col': col}
 
@@ -429,4 +431,3 @@ class SetupScreensMixin:
         self.lbl_fog.text = f"Плотность тумана: {self.settings['fog_density']:.3f}"
         fs_txt = "ВКЛ" if self.settings['fullscreen'] else "ВЫКЛ"
         self.btn_fullscreen.text = f"ПОЛНЫЙ ЭКРАН: {fs_txt}"
-

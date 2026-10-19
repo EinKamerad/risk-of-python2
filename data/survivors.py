@@ -108,12 +108,12 @@ SURVIVOR_CLASSES = {
     },
     'sol': {
         'name': 'SOL BADGUY',
-        'subtitle': 'Flame of Corruption (Guilty Gear)',
+        'subtitle': 'Flame of Corruption [БЛИЖНИЙ БОЙ]',
         'icon': 'SOL',
-        'hp': 145,
-        'speed': 10.2,
-        'damage': 28.0,
-        'fire_rate': 2.8,
+        'hp': 160,
+        'speed': 10.6,
+        'damage': 30.0,
+        'fire_rate': 2.9,
         'proj_speed': 42.0,
         'proj_scale': 0.48,
         'aoe': 3.5,
@@ -121,20 +121,20 @@ SURVIVOR_CLASSES = {
         'armor_color': rgb(40, 35, 38),
         'visor_color': rgb(255, 165, 30),
         'skills': {
-            'm1': {'name': 'Gun Flame', 'cd': 0.35, 'desc': '[ЛКМ] Взмах мечом Junkyard Dog, пускающий пробивную волну пламени.'},
-            'm2': {'name': 'Volcanic Viper', 'cd': 4.2, 'desc': '[ПКМ] Сокрушительный огненный апперкот в прыжке с AoE-взрывом.'},
-            'shift': {'name': 'Fafnir Lunge', 'cd': 3.8, 'desc': '[Shift] Стремительный пробивной удар вперёд, сжигающий врагов на пути.'},
-            'r': {'name': 'DRAGON INSTALL', 'cd': 11.0, 'desc': '[R] Пробуждение силы Гира: взрыв Tyrant Rave + ускорение боя на 6 сек.'}
+            'm1': {'name': 'Junkyard Dog Slash', 'cd': 0.34, 'desc': '[ЛКМ - Ближний бой] Широкие рубящие удары огненным мечом перед собой (радиус 5.4м).'},
+            'm2': {'name': 'Volcanic Viper & Gun Flame', 'cd': 4.0, 'desc': '[ПКМ] Сокрушительный огненный апперкот мечом в прыжке + волна пламени.'},
+            'shift': {'name': 'Fafnir Lunge', 'cd': 3.8, 'desc': '[Shift] Стремительный пробивной рывок с огненным ударом кулака.'},
+            'r': {'name': 'DRAGON INSTALL', 'cd': 11.0, 'desc': '[R] Пробуждение силы Гира: взрыв Tyrant Rave + ускорение боя и регенерация на 6 сек.'}
         }
     },
     'gwen': {
         'name': 'GWEN',
-        'subtitle': 'Благая Швея (League of Legends)',
+        'subtitle': 'Благая Швея [БЛИЖНИЙ БОЙ]',
         'icon': 'GWN',
-        'hp': 115,
-        'speed': 10.5,
-        'damage': 16.5,
-        'fire_rate': 4.6,
+        'hp': 135,
+        'speed': 10.8,
+        'damage': 18.5,
+        'fire_rate': 4.8,
         'proj_speed': 52.0,
         'proj_scale': 0.30,
         'aoe': 1.8,
@@ -142,11 +142,31 @@ SURVIVOR_CLASSES = {
         'armor_color': rgb(32, 28, 46),
         'visor_color': rgb(195, 240, 255),
         'skills': {
-            'm1': {'name': 'Snip Snip!', 'cd': 0.22, 'desc': '[ЛКМ] Быстрые разрезы ножницами, исцеляющие Гвен при попадании.'},
-            'm2': {'name': 'Center Snip', 'cd': 3.8, 'desc': '[ПКМ] Мощный финальный разрез по центру (пробивает броню и врагов).'},
-            'shift': {'name': 'Hallowed Mist', 'cd': 5.5, 'desc': '[Shift] Рывок и призыв Священного Тумана, лечащего Гвен и бьющего врагов.'},
-            'r': {'name': 'Needlework', 'cd': 9.0, 'desc': '[R] Выпускает веер из 5 гигантских призрачных игл насквозь.'}
+            'm1': {'name': 'Snip Snip! (Thousand Cuts)', 'cd': 0.21, 'desc': '[ЛКМ - Ближний бой] Сверхбыстрые разрезы ножницами в конусе перед собой с вампиризмом.'},
+            'm2': {'name': 'Center Snip!', 'cd': 3.5, 'desc': '[ПКМ - Ближний бой] Мощный смыкающий разрез гигантскими ножницами (320% чистого урона + лечение).'},
+            'shift': {'name': 'Skip \'n Slash & Hallowed Mist', 'cd': 5.2, 'desc': '[Shift] Рывок вперёд и призыв Священного Тумана, лечащего Гвен и бьющего врагов.'},
+            'r': {'name': 'Needlework', 'cd': 9.0, 'desc': '[R] Дальний залп веером из 5 гигантских призрачных игл насквозь.'}
+        }
+    },
+    'enforcer': {
+        'name': 'ENFORCER',
+        'subtitle': 'Тяжёлый Бастион UES (Hallowed Concepts)',
+        'icon': 'ENF',
+        'hp': 175,
+        'speed': 9.0,
+        'damage': 15.0,
+        'fire_rate': 1.65,
+        'proj_speed': 64.0,
+        'proj_scale': 0.20,
+        'aoe': 0.0,
+        'body_color': rgb(55, 115, 195),
+        'armor_color': rgb(38, 48, 68),
+        'visor_color': rgb(110, 225, 255),
+        'skills': {
+            'm1': {'name': 'Riot Shotgun', 'cd': 0.60, 'desc': '[ЛКМ] Мощный залп картечью из 6 пробивных дробин (в стойке щита стреляет быстрее и кучнее).'},
+            'm2': {'name': 'Shield Bash', 'cd': 4.0, 'desc': '[ПКМ - Ближний бой] Оглушающий удар щитом перед собой (260% урона, отбрасывание + стан 2с и +20 щита).'},
+            'shift': {'name': 'Protect and Serve', 'cd': 1.2, 'desc': '[Shift] Переключение Стойки Щита: -65% входящего урона и +45% скорости стрельбы (при снятии — рывок).'},
+            'r': {'name': 'Tear Gas Grenade', 'cd': 9.5, 'desc': '[R] Бросает гранату со слезоточивым газом (замедляет врагов на 50% и наносит урон по области 6 сек).'}
         }
     }
 }
-
