@@ -152,12 +152,9 @@ class HallowedMistZone(Entity):
                         VisualFX(e_pos + Vec3(0, 1, 0), rgb(130, 230, 255), 1.4, 0.2)
 
 
-# ==========================================================
-# СПЕЦЭФФЕКТЫ АТАК МИТРИКСА (SHOCKWAVE RING & PIZZA CUTTER)
-# ==========================================================
 class LunarShockwaveRing(Entity):
-    """Расширяющееся по полу кольцо от удара молота Митрикса (можно перепрыгнуть!)"""
-    def __init__(self, center_pos, damage, max_radius=26.0, speed=18.0):
+    """Расширяющееся по полу кольцо от удара молота Митрикса (можно перепрыгнуть или уйти на платформу!)"""
+    def __init__(self, center_pos, damage, max_radius=54.0, speed=22.0):
         super().__init__(position=Vec3(center_pos[0], center_pos[1] + 0.15, center_pos[2]))
         self.damage = damage
         self.cur_radius = 1.5
@@ -167,8 +164,8 @@ class LunarShockwaveRing(Entity):
 
         self.ring = Entity(
             parent=self, model='diamond',
-            scale=(3.0, 0.35, 3.0),
-            color=rgb(80, 230, 255, 160),
+            scale=(3.0, 0.45, 3.0),
+            color=rgb(80, 230, 255, 175),
             unlit=True
         )
 
@@ -182,28 +179,27 @@ class LunarShockwaveRing(Entity):
             destroy(self)
             return
 
-        self.ring.scale = (self.cur_radius * 2.0, 0.35, self.cur_radius * 2.0)
+        self.ring.scale = (self.cur_radius * 2.0, 0.45, self.cur_radius * 2.0)
         self.ring.rotation_y += 90 * time.dt
 
         if not self.hit_player and is_valid(game.player):
             p = game.player
             p_pos = Vec3(*p.position)
-            # Если игрок находится на линии кольца и НЕ подпрыгнул выше 1.3м от пола арены
-            if abs(distance_2d(p_pos, Vec3(*self.position)) - self.cur_radius) <= 1.25:
-                if abs(p_pos.y - self.position.y) < 1.35:
+            if abs(distance_2d(p_pos, Vec3(*self.position)) - self.cur_radius) <= 1.4:
+                if abs(p_pos.y - self.position.y) < 1.45:
                     self.hit_player = True
                     p.take_damage(self.damage)
                     VisualFX(p_pos + Vec3(0, 1, 0), color.cyan, 2.5, 0.25)
 
 
 class LunarPizzaAttack(Entity):
-    """Культовая атака 3-й фазы Митрикса: вращающиеся лучи по всей арене с последующим взрывом"""
-    def __init__(self, center_pos, damage, num_slices=6):
+    """Атака 3-й фазы Митрикса на весь 112-метровый Колизей: вращающиеся лучи света с взрывом"""
+    def __init__(self, center_pos, damage, num_slices=8):
         super().__init__(position=Vec3(center_pos[0], center_pos[1] + 0.12, center_pos[2]))
         self.damage = damage
         self.num_slices = num_slices
-        self.rot_speed = random.choice([-32.0, 32.0])
-        self.timer = 1.9
+        self.rot_speed = random.choice([-28.0, 28.0])
+        self.timer = 2.1
         self.detonated = False
 
         self.lines = []
@@ -211,9 +207,9 @@ class LunarPizzaAttack(Entity):
             ang = i * (180.0 / num_slices)
             line = Entity(
                 parent=self, model='cube',
-                scale=(1.1, 0.12, 54.0),
+                scale=(1.4, 0.15, 110.0),
                 rotation_y=ang,
-                color=rgb(70, 215, 255, 135),
+                color=rgb(70, 215, 255, 140),
                 unlit=True
             )
             self.lines.append(line)
@@ -226,8 +222,7 @@ class LunarPizzaAttack(Entity):
         if not self.detonated:
             self.rotation_y += self.rot_speed * time.dt
             self.timer -= time.dt
-            # За 0.35 сек до взрыва лучи фиксируются и вспыхивают белым
-            if self.timer <= 0.35:
+            if self.timer <= 0.40:
                 self.rot_speed = 0.0
                 for ln in self.lines:
                     ln.color = color.white
@@ -238,24 +233,24 @@ class LunarPizzaAttack(Entity):
     def detonate(self, game):
         self.detonated = True
         for ln in self.lines:
-            ln.scale_y = 18.0
-            ln.y = 9.0
-            ln.color = rgb(80, 235, 255, 220)
-            ln.animate_scale_x(0.05, duration=0.38)
+            ln.scale_y = 22.0
+            ln.y = 11.0
+            ln.color = rgb(80, 235, 255, 225)
+            ln.animate_scale_x(0.05, duration=0.42)
 
         if is_valid(game.player):
             p_pos = Vec3(*game.player.position)
             c_pos = Vec3(*self.position)
             dx = p_pos.x - c_pos.x
             dz = p_pos.z - c_pos.z
-            if math.hypot(dx, dz) <= 28.0:
+            if math.hypot(dx, dz) <= 56.0:
                 for ln in self.lines:
                     world_ang = math.radians(self.rotation_y + ln.rotation_y)
                     lx, lz = math.sin(world_ang), math.cos(world_ang)
                     perp_dist = abs(dx * lz - dz * lx)
-                    if perp_dist <= 1.25:
+                    if perp_dist <= 1.45:
                         game.player.take_damage(self.damage)
                         VisualFX(p_pos + Vec3(0, 1, 0), color.cyan, 3.2, 0.3)
                         break
 
-        destroy(self, delay=0.4)
+        destroy(self, delay=0.45)

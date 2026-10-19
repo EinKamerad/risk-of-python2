@@ -6,6 +6,7 @@ from models.survivors import build_survivor_mesh
 from entities.fx import VisualFX
 from entities.survivor_skills import SurvivorSkillsMixin
 
+
 class Survivor(Entity, SurvivorSkillsMixin):
     def __init__(self, char_key='commando'):
         super().__init__(position=(0, 0, 0))
@@ -25,7 +26,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.proj_aoe = cfg['aoe']
 
         self.items = {k: 0 for k in ITEM_POOL.keys()}
-        self.item_order = []  # Хранит порядок подбора предметов для динамического UI
+        self.item_order = []
         self.gold = 35
 
         self.vel_y = 0.0
@@ -125,6 +126,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         if not game or not game.running or self.is_empty():
             return
 
+        prev_y = self.y
         sens = game.settings.get('sensitivity', 45)
         if mouse.locked:
             self.rotation_y += mouse.velocity[0] * sens
@@ -156,7 +158,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.opal_timer = max(0.0, self.opal_timer - time.dt)
         self.shield = max(0.0, self.shield - 1.5 * time.dt)
 
-        # Medkit: отложенное лечение после получения урона
         if self.medkit_timer > 0:
             self.medkit_timer -= time.dt
             if self.medkit_timer <= 0 and self.items['medkit'] > 0:
@@ -195,7 +196,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.vel_y = 12.0
             self.grounded = False
             self.jumps_left -= 1
-            # Wax Quill: рывок вперёд при прыжке
             if self.items['wax_quill'] > 0 and self.is_moving:
                 self.dash_vector = self.forward * (14.0 + 4.0 * self.items['wax_quill'])
                 self.dash_timer = max(self.dash_timer, 0.16)
@@ -203,10 +203,10 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 VisualFX(Vec3(*self.position), color.cyan, 1.8, 0.22)
         self.space_was_pressed = space_down
 
-        self.vel_y -= 26.0 * time.dt
-        self.y += self.vel_y * time.dt
+        self.vel_y -= 26.0 * max(0.001, min(time.dt, 0.05))
+        self.y += self.vel_y * max(0.001, min(time.dt, 0.05))
 
-        floor_h = game.get_surface_height(self.position.x, self.position.z, self.y)
+        floor_h = game.get_surface_height(self.position.x, self.position.z, self.y, prev_y=prev_y)
         if self.y <= floor_h:
             self.y = floor_h
             self.vel_y = 0.0
@@ -214,17 +214,31 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.jumps_left = self.max_jumps
 
         resolved = game.resolve_horizontal_collision(Vec3(*self.position), radius=0.72, entity_y=self.y)
-        self.x = clamp(resolved.x, -58, 58)
-        self.z = clamp(resolved.z, -58, 58)
+        bound = getattr(game, 'world_bound', 58.0)
+        self.x = clamp(resolved.x, -bound, bound)
+        self.z = clamp(resolved.z, -bound, bound)
 
-        # Защита камеры от проваливания под пол при взгляде вверх
+        # Пока идёт дуэль с Митриксом в Колизее, силовой купол удерживает игрока внутри арены
+        if game.special_mode == 'moon' and game.mithrix_spawned and is_valid(game.active_boss) and self.y >= 105.0:
+            arena_r = math.hypot(self.x, self.z)
+            if arena_r > 52.5:
+                ang = math.atan2(self.z, self.x)
+                self.x = math.cos(ang) * 52.5
+                self.z = math.sin(ang) * 52.5
+            if self.y < 120.0:
+                self.y = 120.0
+                self.vel_y = 0.0
+                self.grounded = True
+                self.jumps_left = self.max_jumps
+
+        # Защита камеры от проваливания сквозь текущий пол/платформу при взгляде вверх
         pitch_rad = math.radians(self.cam_pivot.rotation_x)
         base_dist = 8.8
         if pitch_rad < 0:
             sin_p = math.sin(-pitch_rad)
             cos_p = math.cos(pitch_rad)
             pivot_world_y = self.y + 2.15 + 0.75 * cos_p
-            min_cam_y = 0.55
+            min_cam_y = floor_h + 0.55
             avail_drop = max(0.4, pivot_world_y - min_cam_y)
             safe_dist = avail_drop / max(0.01, sin_p)
             camera.z = -clamp(min(base_dist, safe_dist), 2.0, base_dist)
@@ -265,25 +279,20 @@ class Survivor(Entity, SurvivorSkillsMixin):
             return
 
         dmg = amount
-        # Rose Buckler: снижение урона в движении
         if self.is_moving and self.items['rose_buckler'] > 0:
             dmg *= (1.0 / (1.0 + 0.15 * self.items['rose_buckler']))
 
-        # Oddly-shaped Opal: снижение первого удара раз в 5 сек
         if self.items['opal'] > 0 and self.opal_timer <= 0:
             dmg *= max(0.25, 1.0 - (0.20 + 0.10 * self.items['opal']))
             self.opal_timer = 5.0
             VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), color.magenta, 2.0, 0.22)
 
-        # Repulsion Armor Plate: плоское снижение урона
         if self.items['repulsion_armor'] > 0:
             dmg = max(1.0, dmg - 4.0 * self.items['repulsion_armor'])
 
-        # Medkit: запуск таймера аптечки
         if self.items['medkit'] > 0:
             self.medkit_timer = 1.1
 
-        # Поглощение урона барьером Topaz Brooch
         if self.shield > 0:
             absorbed = min(self.shield, dmg)
             self.shield -= absorbed
@@ -293,4 +302,3 @@ class Survivor(Entity, SurvivorSkillsMixin):
         if self.hp <= 0:
             self.hp = 0
             game.on_player_death()
-

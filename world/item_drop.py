@@ -5,6 +5,7 @@ from config import ctx, is_valid, ITEM_POOL
 from models.items import build_item_mesh
 from entities.fx import VisualFX
 
+
 class ItemDrop(Entity):
     def __init__(self, start_pos, item_key):
         super().__init__(position=Vec3(*start_pos) + Vec3(0, 1.2, 0))
@@ -15,6 +16,7 @@ class ItemDrop(Entity):
         ang = random.uniform(0, math.pi * 2)
         self.vel = Vec3(math.cos(ang) * 4.2, 9.5, math.sin(ang) * 4.2)
         self.landed = False
+        self.base_y = start_pos[1] + 0.85
 
         self.visual = build_item_mesh(self, item_key)
         self.beam = Entity(
@@ -37,10 +39,14 @@ class ItemDrop(Entity):
             return
 
         if not self.landed:
+            prev_y = self.y
             self.vel.y -= 22.0 * time.dt
             self.position += self.vel * time.dt
-            if self.y <= 0.85:
-                self.y = 0.85
+            floor_h = game.get_surface_height(self.x, self.z, self.y, prev_y=prev_y)
+            target_y = floor_h + 0.85
+            if self.y <= target_y:
+                self.y = target_y
+                self.base_y = target_y
                 self.landed = True
         else:
             self.visual.y = math.sin(time.time() * 3.5) * 0.15
@@ -58,4 +64,3 @@ class ItemDrop(Entity):
                 if self in game.stage_entities:
                     game.stage_entities.remove(self)
                 destroy(self)
-

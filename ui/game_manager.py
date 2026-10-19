@@ -7,7 +7,7 @@ from config import (
 )
 from entities import Survivor, Enemy, VisualFX
 from world import ItemDrop, build_stage_world
-from world.lunar import EscapeShip
+from world.lunar import EscapeShip, LunarEscapePad, COLOSSEUM_Y
 from network import NetworkManager
 from core.physics import PhysicsMixin
 from ui.diorama import DioramaMixin
@@ -37,6 +37,7 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         self.stage_seed = 1001
         self.stage_name = ''
         self.special_mode = None   # None, 'bazaar', 'moon'
+        self.world_bound = 58.0
         self.lunar_coins = 5       # Стартовый запас Лунных Монет
         self.blue_orb_spawned = False
         self.moon_pillars_done = 0
@@ -157,14 +158,19 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         self.stage_name = stage_info['name'] if isinstance(stage_info, dict) else str(stage_info)
 
         if is_valid(self.player):
-            self.player.position = Vec3(0, 1, -18) if special_mode == 'bazaar' else Vec3(0, 1, 0)
+            if special_mode == 'bazaar':
+                self.player.position = Vec3(0, 1, -18)
+            elif special_mode == 'moon':
+                self.player.position = Vec3(0, 1, -16)
+            else:
+                self.player.position = Vec3(0, 1, 0)
             self.player.vel_y = 0.0
 
         self.director_credits = 26.0 * self.difficulty_coeff
         if special_mode == 'bazaar':
             self.show_banner('БАЗАР МЕЖДУ ВРЕМЕНЕМ :: ТОРГОВЛЯ С ТРИТОНОМ', rgb(80, 215, 255), 3.5)
         elif special_mode == 'moon':
-            self.show_banner('COMMENCEMENT :: ЗАРЯДИТЕ 2 СТОЛПА ЛУНЫ ДЛЯ ПОДЪЁМА К МИТРИКСУ!', rgb(100, 225, 255), 4.5)
+            self.show_banner('COMMENCEMENT :: ЗАРЯДИТЕ ВСЕ 4 СТОЛПА ЛУНЫ НА БАСТИОНАХ!', rgb(100, 225, 255), 4.5)
         else:
             self.show_banner(f'STAGE {self.stage}: {self.stage_name.upper()}', color.yellow, 3.0)
 
@@ -179,12 +185,15 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
 
     def on_moon_pillar_charged(self):
         self.moon_pillars_done += 1
-        if self.moon_pillars_done >= 2 and self.teleporter and hasattr(self.teleporter, 'unlock_pad'):
+        if self.teleporter and hasattr(self.teleporter, 'update_progress_label'):
+            self.teleporter.update_progress_label(self.moon_pillars_done, 4)
+
+        if self.moon_pillars_done >= 4 and self.teleporter and hasattr(self.teleporter, 'unlock_pad'):
             self.teleporter.unlock_pad()
-            self.show_banner('ГРАВИ-ЛИФТ АКТИВИРОВАН! ИДИТЕ К ЦЕНТРАЛЬНОМУ ЛУЧУ СВЕТА!', color.cyan, 4.5)
+            self.show_banner('ВСЕ 4 СТОЛПА ЗАРЯЖЕНЫ! ГРАВИ-ЛИФТ В ЦЕНТРЕ ОТКРЫТ (Y=120м)!', color.cyan, 5.0)
         else:
-            rem = max(0, 2 - self.moon_pillars_done)
-            self.show_banner(f'СТОЛП ЗАРЯЖЕН! ОСТАЛОСЬ ЗАРЯДИТЬ ЕЩЁ {rem}', color.lime, 3.0)
+            rem = max(0, 4 - self.moon_pillars_done)
+            self.show_banner(f'СТОЛП ЗАРЯЖЕН ({self.moon_pillars_done}/4)! ОСТАЛОСЬ ЗАРЯДИТЬ ЕЩЁ {rem}', color.lime, 3.2)
 
     def start_mithrix_encounter(self):
         if self.mithrix_spawned:
@@ -195,17 +204,26 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
                 destroy(e)
         self.enemies = [e for e in self.enemies if is_valid(e)]
 
-        boss = Enemy(Vec3(0, 22.0, 12.0), 'mithrix', self.difficulty_coeff)
+        boss = Enemy(Vec3(0, COLOSSEUM_Y, 22.0), 'mithrix', self.difficulty_coeff)
         self.active_boss = boss
-        self.boss_title.text = BOSS_TITLES['mithrix']
+        self.boss_title.text = 'MITHRIX [PHASE 1/4] :: KING OF NOTHING'
         self.enemies.append(boss)
-        self.show_banner('МИТРИКС, КОРОЛЬ НИЧЕГО :: ПОСЛЕДНЯЯ БИТВА!', color.cyan, 4.0)
+        self.show_banner('МИТРИКС, КОРОЛЬ НИЧЕГО [ФАЗА 1/4] :: БИТВА В НЕБЕСНОМ КОЛИЗЕЕ!', color.cyan, 4.2)
 
     def on_mithrix_defeated(self, death_pos):
-        self.moon_detonation_timer = 60.0
-        ship = EscapeShip(Vec3(0, 0, -42.0))
+        self.moon_detonation_timer = 75.0
+        ship_pos = Vec3(0, 0, -52.0)
+        ship = EscapeShip(ship_pos)
         self.stage_entities.append(ship)
-        self.show_banner('МИТРИКС ПОВЕРЖЕН! ЛУНА ВЗОРВЁТСЯ ЧЕРЕЗ 60 СЕК — ПРЫГАЙТЕ ВНИЗ К КОРАБЛЮ!', color.lime, 6.0)
+
+        # Зелёный эвакуационный портал-трамплин на южном краю Колизея для быстрого спуска к кораблю
+        escape_pad = LunarEscapePad(Vec3(0, COLOSSEUM_Y, -46.0), ship_pos)
+        self.stage_entities.append(escape_pad)
+
+        self.show_banner(
+            'МИТРИКС ПОВЕРЖЕН! ПРЫГАЙТЕ В ЗЕЛЁНЫЙ ЛУЧ НА КРАЮ КОЛИЗЕЯ К КОРАБЛЮ (75 СЕК)!',
+            color.lime, 6.5
+        )
 
     def on_run_victory(self):
         self.running = False
@@ -366,8 +384,8 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         if self.moon_detonation_timer > 0:
             self.moon_detonation_timer -= time.dt
             if random.random() < 0.15:
-                rx = random.uniform(-45, 45)
-                rz = random.uniform(-45, 45)
+                rx = random.uniform(-65, 65)
+                rz = random.uniform(-65, 65)
                 VisualFX(Vec3(rx, 1.0, rz), color.cyan, 6.5, 0.4)
             if self.moon_detonation_timer <= 0:
                 self.on_player_death()
@@ -396,19 +414,17 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
                     ang = random.uniform(0, math.pi * 2)
                     dist = random.uniform(16.0, 28.0)
                     p_pos = Vec3(*self.player.position)
-                    spawn_pos = p_pos + Vec3(math.cos(ang) * dist, 0, math.sin(ang) * dist)
-                    spawn_pos.x = clamp(spawn_pos.x, -54, 54)
-                    spawn_pos.z = clamp(spawn_pos.z, -54, 54)
-                    spawn_pos.y = 0
-                    new_enemy = Enemy(spawn_pos, enemy_type, coeff)
+                    max_b = self.world_bound - 4.0
+                    sx = clamp(p_pos.x + math.cos(ang) * dist, -max_b, max_b)
+                    sz = clamp(p_pos.z + math.sin(ang) * dist, -max_b, max_b)
+                    sy = self.get_surface_height(sx, sz, p_pos.y)
+                    new_enemy = Enemy(Vec3(sx, sy, sz), enemy_type, coeff)
                     self.enemies.append(new_enemy)
 
         p = self.player
-        # Регенерация щита от лунного предмета Transcendence
         if p.items.get('transcendence', 0) > 0:
             p.shield = min(float(p.max_hp * 0.5), p.shield + 8.0 * time.dt)
 
-        # Эффект лунного предмета Purity (ускорение перезарядки навыков)
         purity_stacks = p.items.get('purity', 0)
         if purity_stacks > 0:
             extra_cdr = (1.2 + 0.6 * purity_stacks) * time.dt
@@ -441,7 +457,10 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
             self.boss_hud.enabled = True
             b_ratio = clamp(self.active_boss.hp / self.active_boss.max_hp, 0.0, 1.0)
             self.boss_bar_fill.scale_x = max(0.001, b_ratio)
-            self.boss_bar_fill.color = color.cyan if self.active_boss.enemy_type == 'mithrix' else color.red
+            if self.active_boss.enemy_type == 'mithrix':
+                self.boss_bar_fill.color = color.magenta if self.active_boss.phase == 4 else color.cyan
+            else:
+                self.boss_bar_fill.color = color.red
         else:
             self.boss_hud.enabled = False
 
@@ -455,3 +474,26 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
             f"TIME: {mins:02d}:{secs:02d}  |  {diff_label} (x{coeff:.2f})\n"
             f"MONSTERS: {len(self.enemies)}  |  LUNAR COINS: {self.lunar_coins}"
         )
+
+        self.tab_panel.enabled = bool(held_keys['tab'])
+        if self.tab_panel.enabled:
+            atk_bonus = p.items['syringe'] * 15
+            spd_bonus = p.items['hoof'] * 14 + p.items['energy_drink'] * 8 + p.items['red_whip'] * 12
+            blk_pct = p.block_chance * 100.0
+            net_line = f"Сеть: Комната {self.net.room_code} ({1 + len(self.remote_players)} игр.)" if self.net.connected else "Сеть: Одиночная игра"
+            lines = [
+                f"=== SURVIVOR OVERVIEW: {SURVIVOR_CLASSES[p.char_key]['name']} | {net_line} ===",
+                f"Base Damage: {p.base_damage:.1f}   |   Attack Speed: +{atk_bonus}% ({p.fire_rate:.1f} shots/s)",
+                f"Move Speed: +{spd_bonus}% ({p.move_speed:.1f})   |   Block Chance: {blk_pct:.1f}%   |   Crit: {p.crit_chance*100:.0f}%",
+                "",
+                f"=== СОБРАННЫЕ АРТЕФАКТЫ ({sum(p.items.values())} ШТ.) ==="
+            ]
+            if not p.item_order:
+                lines.append(" Пока нет собранных предметов. Открывайте сундуки за золото клавишей [E]!")
+            else:
+                for k in p.item_order[:16]:
+                    info = ITEM_POOL[k]
+                    lines.append(f" • {info['name']} [x{p.items[k]}]: {info['desc']}")
+                if len(p.item_order) > 16:
+                    lines.append(f" ... и ещё {len(p.item_order) - 16} типов предметов.")
+            self.tab_text.text = '\n'.join(lines)
