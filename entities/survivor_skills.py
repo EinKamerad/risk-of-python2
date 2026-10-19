@@ -8,6 +8,10 @@ from entities.fx import (
 )
 from entities.projectile import Projectile, apply_player_hit_effects
 
+def distance_2d(a, b):
+    """Переопределяет distance_2d на горизонтальную плоскость X-Z для 3D-мира"""
+    return math.hypot(a[0] - b[0], a[2] - b[2])
+
 
 class SurvivorSkillsMixin:
     def _broadcast_shot(self, pos, aim_dir, speed, dmg, scale_val, col_name, aoe=0.0, pierce=False, bounces=0, homing=False):

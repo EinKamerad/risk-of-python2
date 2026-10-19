@@ -10,6 +10,11 @@ COLOSSEUM_Y = 120.0
 COLOSSEUM_RADIUS = 56.0
 
 
+def dist_xz(a, b):
+    """Горизонтальное расстояние в 3D-плоскости X-Z (вместо distance_2d, который в Ursina считает X-Y)"""
+    return math.hypot(a[0] - b[0], a[2] - b[2])
+
+
 class NewtAltar(Entity):
     """Синий Алтарь Тритона: за 1 Лунную Монету открывает Синий Портал на Базар"""
     def __init__(self, pos):
@@ -41,7 +46,7 @@ class NewtAltar(Entity):
                 self.crystal.color = color.gray
                 game.blue_orb_spawned = True
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.5, 0), color.cyan, 6.0, 0.4)
-                game.show_banner('ПОЯВИЛАСЬ СИНЯЯ СФЕРА! ПОСЛЕ ТЕЛЕПОРТА ОТКРОЕТСЯ БАЗАР', rgb(80, 210, 255), 3.5)
+                game.show_banner('ПОЯВИЛАСЬ СИНЯЯ СФЕРА! У ТЕЛЕПОРТА ОТКРОЕТСЯ ПОРТАЛ НА БАЗАР', rgb(80, 210, 255), 3.5)
             else:
                 game.show_banner('НЕДОСТАТОЧНО ЛУННЫХ МОНЕТ (НУЖНА 1 МОНЕТА)', color.red, 2.0)
 
@@ -62,8 +67,8 @@ class BluePortal(Entity):
             return
         self.ring.rotation_z += 75 * time.dt
         dist = distance(Vec3(*self.position), Vec3(*game.player.position))
-        self.label.enabled = (dist < 10.0)
-        if dist < 4.5 and held_keys['e']:
+        self.label.enabled = (dist < 11.0)
+        if dist < 5.2 and held_keys['e']:
             if self.target_mode == 'bazaar':
                 game.enter_bazaar()
             else:
@@ -174,7 +179,7 @@ class LunarBouncePad(Entity):
         self.ring.rotation_y += 120 * time.dt
         self.cooldown = max(0.0, self.cooldown - time.dt)
         p = game.player
-        if self.cooldown <= 0 and distance_2d(Vec3(*self.position), Vec3(*p.position)) <= 2.1:
+        if self.cooldown <= 0 and dist_xz(self.position, p.position) <= 2.1:
             if abs(p.y - self.y) <= 2.0:
                 self.cooldown = 0.65
                 p.vel_y = self.jump_vel
@@ -209,7 +214,6 @@ class MoonPillar(Entity):
         Entity(parent=self, model='cube', scale=(3.2, 0.6, 3.2), y=0.3, color=rgb(50, 62, 84), collider='box')
         self.obelisk = Entity(parent=self, model='diamond', scale=(1.6, 5.8, 1.6), y=3.2, color=rgb(215, 225, 242))
         self.core = Entity(parent=self, model='diamond', scale=(2.1, 1.5, 2.1), y=3.2, color=self.col, unlit=True)
-        # Высокий вертикальный маяк, чтобы пилон было видно издалека
         self.beacon = Entity(parent=self, model='cube', scale=(0.22, 32.0, 0.22), y=18.0, color=self.col, unlit=True)
         self.zone_ring = Entity(
             parent=self, model='sphere',
@@ -231,7 +235,7 @@ class MoonPillar(Entity):
         my_pos = Vec3(*self.position)
         p = game.player
         p_pos = Vec3(*p.position)
-        dist = distance_2d(my_pos, p_pos)
+        dist = dist_xz(my_pos, p_pos)
         height_diff = abs(p_pos.y - my_pos.y)
 
         if self.state == 'idle':
@@ -253,7 +257,6 @@ class MoonPillar(Entity):
                     if self.pulse_timer <= 0:
                         self.pulse_timer = 2.4
                         VisualFX(my_pos + Vec3(0, 0.6, 0), self.col, 14.0, 0.35)
-                        # Если игрок на земле бастиона (не в прыжке), волна отталкивает его
                         if p.y <= my_pos.y + 1.2:
                             push_dir = (p_pos - my_pos).normalized()
                             p.dash_vector = Vec3(push_dir.x * 16.0, 0, push_dir.z * 16.0)
@@ -314,6 +317,16 @@ class LunarJumpPad(Entity):
         game = ctx.game
         if not game or not game.running or not is_valid(game.player) or self.is_empty():
             return
+
+        # После победы над Митриксом (когда запущен таймер эвакуации) лифт наверх полностью отключается!
+        if getattr(game, 'moon_detonation_timer', 0.0) > 0:
+            self.active = False
+            self.launching = False
+            self.beam.enabled = False
+            self.label.enabled = False
+            self.ring.color = color.gray
+            return
+
         self.ring.rotation_y += 95 * time.dt
         p = game.player
 
@@ -330,7 +343,7 @@ class LunarJumpPad(Entity):
                 game.start_mithrix_encounter()
             return
 
-        dist = distance_2d(Vec3(*self.position), Vec3(*p.position))
+        dist = dist_xz(self.position, p.position)
         if self.active and dist < 4.0 and p.y < 15.0:
             self.launching = True
             self.launch_timer = 0.85
@@ -339,14 +352,15 @@ class LunarJumpPad(Entity):
 
 
 class LunarEscapePad(Entity):
-    """Эвакуационный портал-трамплин на краю Колизея (Y=120), спускающий игрока к Кораблю Спасения"""
+    """Эвакуационный портал-трамплин на краю Колизея (Y=120), спускающий игрока прямо к Кораблю Спасения"""
     def __init__(self, pos, target_pos):
         super().__init__(position=Vec3(*pos))
         self.target_pos = Vec3(*target_pos)
+        self.cooldown = 0.0
         self.ring = Entity(parent=self, model='diamond', scale=(5.5, 0.35, 5.5), y=0.4, color=color.lime, unlit=True)
         self.beam = Entity(parent=self, model='cube', scale=(2.2, 28.0, 2.2), y=14.0, color=rgb(80, 255, 140, 100), unlit=True)
         self.label = Text(
-            text='[ВСТАНЬТЕ В ЛУЧ] Спуск к Спасательному Кораблю!',
+            text='[ВСТАНЬТЕ В ЗЕЛЁНЫЙ ЛУЧ] Эвакуационный спуск к Кораблю!',
             parent=self, y=5.2, scale=13, origin=(0, 0),
             color=color.lime, billboard=True
         )
@@ -356,13 +370,21 @@ class LunarEscapePad(Entity):
         if not game or not game.running or not is_valid(game.player) or self.is_empty():
             return
         self.ring.rotation_y += 120 * time.dt
+        self.cooldown = max(0.0, self.cooldown - time.dt)
         p = game.player
-        if distance_2d(Vec3(*self.position), Vec3(*p.position)) < 3.6 and abs(p.y - self.y) < 5.0:
-            VisualFX(Vec3(*p.position), color.lime, 6.0, 0.35)
-            p.position = self.target_pos + Vec3(0, 3.0, 16.0)
-            p.vel_y = 0.0
-            VisualFX(Vec3(*p.position), color.lime, 6.0, 0.4)
-            game.show_banner('СПУСК ЗАВЕРШЁН! ЗАРЯДИТЕ СПАСАТЕЛЬНЫЙ КОРАБЛЬ!', color.lime, 3.5)
+
+        # Срабатывает только тогда, когда игрок реально находится наверху в Колизее (Y > 100) и вошёл в зелёный круг
+        if self.cooldown <= 0 and p.y >= COLOSSEUM_Y - 10.0:
+            if dist_xz(self.position, p.position) < 3.8 and abs(p.y - self.y) < 6.0:
+                self.cooldown = 3.0
+                VisualFX(Vec3(*p.position), color.lime, 6.0, 0.35)
+                # Телепортируем игрока на землю прямо перед зоной Спасательного Корабля (вдали от центрального лифта)
+                land_pos = self.target_pos + Vec3(0, 2.0, 14.0)
+                p.position = land_pos
+                p.vel_y = 0.0
+                p.grounded = True
+                VisualFX(land_pos, color.lime, 6.0, 0.4)
+                game.show_banner('СПУСК ЗАВЕРШЁН! УДЕРЖИВАЙТЕ ЗОНУ СПАСАТЕЛЬНОГО КОРАБЛЯ ВПЕРЕДИ!', color.lime, 4.0)
 
 
 class EscapeShip(Entity):
@@ -378,7 +400,6 @@ class EscapeShip(Entity):
         Entity(parent=hull, model='cube', scale=(3.8, 1.1, 3.0), position=(0, 0.7, 3.0), color=color.cyan, unlit=True)
         Entity(parent=hull, model='cube', scale=(9.5, 0.35, 3.4), y=-0.4, color=rgb(65, 75, 92))
 
-        # Высокий зелёный маяк эвакуации, видимый даже с Колизея
         Entity(parent=self, model='cube', scale=(0.45, 90.0, 0.45), y=45.0, color=rgb(80, 255, 120, 95), unlit=True)
 
         self.zone_ring = Entity(

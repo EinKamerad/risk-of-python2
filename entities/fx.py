@@ -4,6 +4,10 @@ import random
 from config import ctx, rgb, is_valid
 from models.survivors import build_survivor_mesh
 
+def distance_2d(a, b):
+    """Переопределяет distance_2d на горизонтальную плоскость X-Z для 3D-мира"""
+    return math.hypot(a[0] - b[0], a[2] - b[2])
+
 
 class VisualFX(Entity):
     def __init__(self, pos, fx_color=color.yellow, max_scale=3.0, duration=0.25):
