@@ -1,6 +1,6 @@
 from entities.fx import (
     VisualFX, MeleeSlashFX, TearGasZone, LightningBeam,
-    OrbitalStrikeFX, ArrowRainZone, HallowedMistZone
+    OrbitalStrikeFX, ArrowRainZone, HallowedMistZone, IFGZone, DummyClone, MindustryTurret
 )
 from entities.projectile import Projectile
 from entities.survivor import Survivor

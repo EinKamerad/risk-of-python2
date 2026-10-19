@@ -3,10 +3,11 @@ import math
 import random
 from config import ctx, rgb, is_valid, SURVIVOR_CLASSES
 from entities.fx import (
-    VisualFX, MeleeSlashFX, TearGasZone, IFGZone, DummyClone,
+    VisualFX, MeleeSlashFX, TearGasZone, IFGZone, DummyClone, MindustryTurret,
     LightningBeam, OrbitalStrikeFX, ArrowRainZone, HallowedMistZone
 )
 from entities.projectile import Projectile, apply_player_hit_effects
+
 
 def distance_2d(a, b):
     """Переопределяет distance_2d на горизонтальную плоскость X-Z для 3D-мира"""
@@ -62,7 +63,7 @@ class SurvivorSkillsMixin:
         hit_count = 0
 
         for e in list(game.enemies):
-            if not is_valid(e):
+            if not is_valid(e) or getattr(e, 'is_ally', False):
                 continue
             e_pos = Vec3(*e.position)
             if abs((e_pos.y + e.hit_height * 0.5) - (my_pos.y + 1.2)) > 4.2:
@@ -109,19 +110,15 @@ class SurvivorSkillsMixin:
         cur = Vec3(*start_pos)
         for i in range(1, int(max_dist / step) + 1):
             p = start_pos + aim_dir * (i * step)
-            # Попадание в колонну или монолит
             if game.is_inside_solid_obstacle(p, 0.35):
                 return p
-            # Попадание в пол или парящую платформу
             surf_h = game.get_surface_height(p.x, p.z, p.y + 1.2)
             if p.y <= surf_h + 0.3:
                 return Vec3(p.x, surf_h + 0.5, p.z)
-            # Зацеп за крупного монстра или босса
             for e in game.enemies:
                 if is_valid(e) and distance(p, Vec3(*e.position) + Vec3(0, e.hit_height, 0)) <= e.hit_radius + 0.6:
                     return Vec3(*e.position) + Vec3(0, e.hit_height, 0)
             cur = p
-        # Если в воздухе ничего не задели — цепляемся на максимальной длине троса (но не ниже пола)
         floor_y = game.get_surface_height(cur.x, cur.z, cur.y)
         return Vec3(cur.x, max(floor_y + 1.0, cur.y), cur.z)
 
@@ -198,7 +195,47 @@ class SurvivorSkillsMixin:
             arm.animate_rotation_x(0, duration=0.18)
             return
 
-        # 4. Стрелковые классы (Commando, Artificer, Huntress, Buzz, V1, Scout, M4A1)
+        # 4. ХАКУРЕЙ РЕЙМУ: Парные самонаводящиеся амулеты Офуда (красно-белые)
+        if self.char_key == 'reimu' and col_override is None:
+            aim_dir = camera.forward
+            base_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 0.9
+            for idx, side_off in enumerate((-0.32, 0.32)):
+                sp = base_pos + self.right * side_off
+                amu_col = rgb(255, 55, 70) if idx == 0 else color.white
+                Projectile(
+                    pos=sp, direction=aim_dir, speed=self.proj_speed,
+                    damage=self.base_damage * 0.65 * damage_mult,
+                    scale_val=self.proj_scale, proj_color=amu_col,
+                    is_player=True, aoe=self.proj_aoe, homing=True
+                )
+            self._broadcast_shot(
+                base_pos, aim_dir, self.proj_speed, self.base_damage * damage_mult,
+                self.proj_scale, 'reimu', self.proj_aoe, False, 0, True
+            )
+            arm = self.parts['right_arm']
+            arm.rotation_x = -28
+            arm.animate_rotation_x(0, duration=0.12)
+            return
+
+        # 5. КОРАБЛЬ MINDUSTRY: Спаренные бортовые пушки с обоих крыльев
+        if self.char_key == 'mindustry' and col_override is None:
+            aim_dir = camera.forward
+            base_pos = Vec3(*self.position) + Vec3(0, 1.45, 0) + self.forward * 1.0
+            for side_off in (-0.55, 0.55):
+                sp = base_pos + self.right * side_off
+                Projectile(
+                    pos=sp, direction=aim_dir, speed=self.proj_speed,
+                    damage=self.base_damage * 0.58 * damage_mult,
+                    scale_val=self.proj_scale, proj_color=rgb(255, 215, 65),
+                    is_player=True, aoe=self.proj_aoe
+                )
+            self._broadcast_shot(
+                base_pos, aim_dir, self.proj_speed, self.base_damage * damage_mult,
+                self.proj_scale, 'mindustry', self.proj_aoe, False, 0, False
+            )
+            return
+
+        # 6. Остальные стрелковые классы (Commando, Artificer, Huntress, Buzz, V1, Scout, M4A1, Medic, Aigis)
         aim_dir = camera.forward
         spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 0.95
         color_map = {
@@ -211,13 +248,18 @@ class SurvivorSkillsMixin:
             'gwen': rgb(95, 225, 255),
             'enforcer': rgb(110, 225, 255),
             'scout': rgb(255, 215, 65),
-            'm4a1': rgb(95, 255, 135)
+            'm4a1': rgb(95, 255, 135),
+            'medic': rgb(255, 75, 90),
+            'aigis': rgb(255, 235, 95),
+            'reimu': rgb(255, 65, 80),
+            'mindustry': rgb(255, 215, 65)
         }
         default_col = color_map.get(self.char_key, color.yellow)
         proj_col = col_override if col_override else default_col
         col_name = 'cyan' if col_override else self.char_key
 
         steal = 1.6 if self.char_key == 'v1' else 0.0
+        ally_heal = (12.0 + self.base_damage * 0.85) if self.char_key == 'medic' else 0.0
 
         Projectile(
             pos=spawn_pos,
@@ -230,14 +272,15 @@ class SurvivorSkillsMixin:
             aoe=self.proj_aoe,
             pierce=False,
             homing=(self.char_key == 'huntress'),
-            lifesteal=steal
+            lifesteal=steal,
+            heal_allies=ally_heal
         )
         self._broadcast_shot(
             spawn_pos, aim_dir, self.proj_speed, self.base_damage * damage_mult,
             self.proj_scale, col_name, self.proj_aoe, False, 0, self.char_key == 'huntress'
         )
 
-        if self.char_key in ('buzz', 'v1', 'scout', 'm4a1'):
+        if self.char_key in ('buzz', 'v1', 'scout', 'm4a1', 'medic', 'aigis'):
             arm = self.parts['right_arm']
             arm.rotation_x = -26
             arm.animate_rotation_x(0, duration=0.12)
@@ -258,7 +301,8 @@ class SurvivorSkillsMixin:
 
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
-        cd_mult = max(0.25, 1.0 - 0.12 * self.items['backup_mag'])
+        alien_cdr = 0.80 ** self.items.get('alien_head', 0)
+        cd_mult = max(0.20, (1.0 - 0.12 * self.items['backup_mag']) * alien_cdr)
         self.m2_cd = skills['m2']['cd'] * cd_mult
         spawn_pos = Vec3(*self.position) + Vec3(0, 1.55, 0) + self.forward * 1.1
         aim_dir = camera.forward
@@ -340,7 +384,6 @@ class SurvivorSkillsMixin:
             l_arm.animate_rotation_y(0, duration=0.22)
 
         elif self.char_key == 'scout':
-            # Jury-Rigged Boomstick (Special Powder): мощный залп картечью + реактивный отскок в воздухе!
             for _ in range(8):
                 offset = Vec3(random.uniform(-0.09, 0.09), random.uniform(-0.06, 0.06), random.uniform(-0.09, 0.09))
                 d = (aim_dir + offset).normalized()
@@ -349,12 +392,10 @@ class SurvivorSkillsMixin:
                     damage=self.base_damage * 0.55, scale_val=0.24,
                     proj_color=color.orange, is_player=True, pierce=True, max_lifetime=0.38
                 )
-            # Ударная волна дробовика вплотную
             self.perform_melee_attack(
                 reach=4.8, cleave_radius=3.4, damage_mult=1.6,
                 slash_col=color.orange, knockback=4.5, aoe=2.0
             )
-            # Оверклок Special Powder: если Скаут в воздухе или смотрит вниз — отдача подбрасывает его!
             if not self.grounded or aim_dir.y < -0.15:
                 recoil_dir = -aim_dir
                 self.vel_y = max(14.5, recoil_dir.y * 22.0)
@@ -364,7 +405,6 @@ class SurvivorSkillsMixin:
                 VisualFX(spawn_pos, color.yellow, 3.2, 0.25)
 
         elif self.char_key == 'm4a1':
-            # Seal of the Avenger (Jupiter Cannon): пробивной рельсовый выстрел с гигантским взрывом
             VisualFX(spawn_pos, rgb(95, 255, 135), 3.0, 0.28)
             Projectile(
                 pos=spawn_pos, direction=aim_dir, speed=58.0,
@@ -372,10 +412,67 @@ class SurvivorSkillsMixin:
                 proj_color=rgb(95, 255, 135), is_player=True, aoe=6.8, pierce=True
             )
             self._broadcast_shot(spawn_pos, aim_dir, 58.0, self.base_damage * 3.4, 0.78, 'buzz', 6.8, True, 0, False)
-            # Все живые клоны также дают залп
             for clone in list(getattr(self, 'dummy_clones', [])):
                 if is_valid(clone):
                     clone.command_burst_shot()
+
+        elif self.char_key == 'medic':
+            # Kritzkrieg Medi-Beam: лечит и баффает союзников впереди + выкачивает HP из врагов по лучу
+            my_pos = Vec3(*self.position) + Vec3(0, 1.4, 0)
+            end_beam = my_pos + aim_dir * 26.0
+            LightningBeam(my_pos, end_beam, rgb(255, 55, 80), 0.32)
+            self.heal_amount(18.0)
+            self.shield = min(float(self.max_hp), self.shield + 20.0)
+
+            allies = (
+                list(getattr(self, 'dummy_clones', []))
+                + list(getattr(self, 'mindustry_turrets', []))
+                + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]
+                + list(game.remote_players.values())
+            )
+            for al in allies:
+                if is_valid(al) and distance(my_pos, Vec3(*al.position)) <= 24.0:
+                    al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.40)
+                    LightningBeam(my_pos, Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 0.24)
+                    VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 2.5, 0.25)
+
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=78.0,
+                damage=self.base_damage * 2.6, scale_val=0.52,
+                proj_color=rgb(255, 55, 80), is_player=True, aoe=3.5,
+                pierce=True, lifesteal=12.0, heal_allies=35.0
+            )
+
+        elif self.char_key == 'aigis':
+            # Pandora Grenade Cannon: мощный фугасный снаряд (300% урона, AoE 5.2м)
+            VisualFX(spawn_pos, color.gold, 2.4, 0.22)
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=52.0,
+                damage=self.base_damage * 3.0, scale_val=0.65,
+                proj_color=rgb(255, 195, 50), is_player=True, aoe=5.2
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 52.0, self.base_damage * 3.0, 0.65, 'aigis', 5.2, False, 0, False)
+
+        elif self.char_key == 'reimu':
+            # Yin-Yang Persuasion Orb: рикошетящая до 6 раз сфера Инь-Ян с AoE
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=46.0,
+                damage=self.base_damage * 2.4, scale_val=0.68,
+                proj_color=rgb(245, 45, 65), is_player=True,
+                aoe=3.2, bounces=6, homing=True
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 46.0, self.base_damage * 2.4, 0.68, 'reimu', 3.2, False, 6, True)
+
+        elif self.char_key == 'mindustry':
+            # Surge Alloy Blast: пробивной разряд Кинетического Сплава с цепными молниями
+            VisualFX(spawn_pos, color.yellow, 2.8, 0.25)
+            Projectile(
+                pos=spawn_pos, direction=aim_dir, speed=58.0,
+                damage=self.base_damage * 2.8, scale_val=0.65,
+                proj_color=rgb(255, 215, 50), is_player=True,
+                aoe=4.8, pierce=True
+            )
+            self._broadcast_shot(spawn_pos, aim_dir, 58.0, self.base_damage * 2.8, 0.65, 'mindustry', 4.8, True, 0, False)
 
     def use_shift_skill(self):
         if getattr(self, 'skill_lock_timer', 0.0) > 0:
@@ -384,9 +481,15 @@ class SurvivorSkillsMixin:
 
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
-        self.shift_cd = skills['shift']['cd']
+        alien_cdr = 0.80 ** self.items.get('alien_head', 0)
+        burn_cdr = 0.70 ** self.items.get('afterburner', 0)
+        self.shift_cd = max(0.25, skills['shift']['cd'] * alien_cdr * burn_cdr)
         my_pos = Vec3(*self.position)
-        nrg_mult = 1.0 + 0.18 * self.items['energy_drink']
+        nrg_mult = (
+            1.0
+            + 0.18 * self.items['energy_drink']
+            + 0.35 * self.items.get('afterburner', 0)
+        )
 
         if self.char_key == 'enforcer':
             self.shield_stance = not getattr(self, 'shield_stance', False)
@@ -412,7 +515,6 @@ class SurvivorSkillsMixin:
             return
 
         if self.char_key == 'scout':
-            # Grappling Hook (Крюк-кошка из Deep Rock Galactic): физическое притягивание по тросу на 45м!
             start_p = my_pos + Vec3(0, 1.5, 0)
             anchor = self._find_grapple_anchor(start_p, camera.forward, max_dist=45.0 * nrg_mult)
             self.grapple_active = True
@@ -434,7 +536,7 @@ class SurvivorSkillsMixin:
             self.dash_vector = self.forward * 18.0 * nrg_mult
             self.dash_timer = 0.32
             for e in list(game.enemies):
-                if is_valid(e):
+                if is_valid(e) and not getattr(e, 'is_ally', False):
                     e_pos = Vec3(*e.position)
                     if distance(e_pos, my_pos) <= 6.8:
                         e.take_damage(self.base_damage * 1.8)
@@ -457,11 +559,11 @@ class SurvivorSkillsMixin:
             self.dash_vector = self.forward * 35.0 * nrg_mult
             self.dash_timer = 0.18
             for e in list(game.enemies):
-                if is_valid(e):
+                if is_valid(e) and not getattr(e, 'is_ally', False):
                     e_pos = Vec3(*e.position)
                     if distance(e_pos, my_pos) <= 6.0:
                         e.take_damage(self.base_damage * 1.5)
-                        self.hp = min(float(self.max_hp), self.hp + 8.0)
+                        self.heal_amount(8.0)
                         VisualFX(e_pos + Vec3(0, 1, 0), color.red, 2.2, 0.25)
         elif self.char_key == 'sol':
             self.dash_vector = self.forward * 27.0 * nrg_mult
@@ -484,22 +586,74 @@ class SurvivorSkillsMixin:
             for clone in list(getattr(self, 'dummy_clones', [])):
                 if is_valid(clone):
                     clone.command_burst_shot()
+        elif self.char_key == 'medic':
+            # Amputator Healing Surge: рывок с ударом пилой Ubersaw и целебным импульсом +25% HP всем вокруг
+            self.dash_vector = self.forward * 24.0 * nrg_mult
+            self.dash_timer = 0.22
+            self.perform_melee_attack(
+                reach=5.5, cleave_radius=3.8, damage_mult=2.2,
+                slash_col=rgb(255, 65, 85), lifesteal=10.0, aoe=2.5
+            )
+            self.heal_amount(self.max_hp * 0.25)
+            VisualFX(my_pos + Vec3(0, 1.0, 0), color.lime, 8.0, 0.35)
+            for al in list(self.dummy_clones) + list(self.mindustry_turrets) + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]:
+                if is_valid(al) and distance(my_pos, Vec3(*al.position)) <= 15.0:
+                    al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.25)
+                    VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 2.5, 0.25)
+        elif self.char_key == 'aigis':
+            # Orgia Mode Overdrive: реактивный взлёт и перегрузка Orgia на 5.5 сек
+            self.vel_y = 14.5
+            self.grounded = False
+            self.dash_vector = self.forward * 24.0 * nrg_mult
+            self.dash_timer = 0.28
+            self.orgia_timer = 5.5
+            VisualFX(my_pos + Vec3(0, 1.2, 0), color.gold, 5.5, 0.35)
+            game.show_banner('ORGIA MODE OVERDRIVE :: АТАКА +50% | СКОРОСТЬ +45% | УРОН +35%!', color.gold, 2.2)
+        elif self.char_key == 'reimu':
+            # Fantasy Nature Float: парящий рывок + щит + 4 самонаводящихся талисмана
+            self.vel_y = 12.5
+            self.grounded = False
+            self.dash_vector = self.forward * 24.0 * nrg_mult
+            self.dash_timer = 0.24
+            self.shield = min(float(self.max_hp), self.shield + 20.0)
+            sp = my_pos + Vec3(0, 1.5, 0)
+            for i in range(4):
+                ang = (i / 4.0) * math.pi * 2
+                d = Vec3(math.cos(ang), 0.2, math.sin(ang)).normalized()
+                Projectile(
+                    pos=sp, direction=d, speed=54.0,
+                    damage=self.base_damage * 1.4, scale_val=0.30,
+                    proj_color=rgb(255, 65, 80), is_player=True, homing=True
+                )
+        # В use_shift_skill:
+        elif self.char_key == 'mindustry':
+            # Core Engine Overdrive: ускоренный пролёт в направлении взгляда + авто-ремонт корпуса (+15% HP)
+            self.dash_vector = camera.forward * 28.0 * nrg_mult
+            self.dash_timer = 0.28
+            self.heal_amount(self.max_hp * 0.15)
+            VisualFX(my_pos + Vec3(0, 1.2, 0), color.yellow, 4.0, 0.3)
+
+        
 
     def use_r_skill(self):
         if getattr(self, 'skill_lock_timer', 0.0) > 0:
             ctx.game.show_banner(f'НЕЙРОСЕТЬ ПЕРЕГРУЖЕНА ПОСЛЕ ПЕРЕСЕЛЕНИЯ ({self.skill_lock_timer:.1f}С)!', color.red, 1.2)
             return
 
+        
         game = ctx.game
         skills = SURVIVOR_CLASSES[self.char_key]['skills']
-        self.r_cd = skills['r']['cd']
+        # В начале use_r_skill (добавлен бонус Lysate Cell):
+        alien_cdr = 0.80 ** self.items.get('alien_head', 0)
+        cell_cdr = 0.75 ** self.items.get('lysate_cell', 0)
+        self.r_cd = max(0.5, skills['r']['cd'] * alien_cdr * cell_cdr)
         my_pos = Vec3(*self.position)
 
         if self.char_key == 'commando':
             self.barrage_shots = 8
             self.barrage_timer = 0.01
         elif self.char_key == 'artificer':
-            targets = [e for e in game.enemies if is_valid(e) and distance(Vec3(*e.position), my_pos) <= 28.0]
+            targets = [e for e in game.enemies if is_valid(e) and not getattr(e, 'is_ally', False) and distance(Vec3(*e.position), my_pos) <= 28.0]
             for i in range(5):
                 if i < len(targets) and is_valid(targets[i]):
                     t_pos = Vec3(*targets[i].position)
@@ -540,18 +694,18 @@ class SurvivorSkillsMixin:
             )
             self._broadcast_shot(start_p, aim_dir, 95.0, self.base_damage * 3.8, 0.65, 'cyan', 4.5, True, 0, False)
             for e in list(game.enemies):
-                if is_valid(e):
+                if is_valid(e) and not getattr(e, 'is_ally', False):
                     e_pos = Vec3(*e.position)
                     if distance(e_pos, my_pos) <= 20.0:
                         LightningBeam(start_p, e_pos + Vec3(0, 1.2, 0), color.yellow, 0.22)
                         e.take_damage(self.base_damage * 1.8)
-                        self.hp = min(float(self.max_hp), self.hp + 5.0)
+                        self.heal_amount(5.0)
             game.show_banner('ULTRARICOSHOT :: BLOOD IS FUEL!', color.yellow, 1.8)
         elif self.char_key == 'sol':
             self.dragon_install_timer = 6.0
             VisualFX(my_pos + Vec3(0, 1.5, 0), rgb(255, 60, 20), 11.0, 0.45)
             for e in list(game.enemies):
-                if is_valid(e):
+                if is_valid(e) and not getattr(e, 'is_ally', False):
                     e_pos = Vec3(*e.position)
                     if distance(e_pos, my_pos) <= 11.0:
                         e.take_damage(self.base_damage * 3.4)
@@ -581,7 +735,6 @@ class SurvivorSkillsMixin:
             game.stage_entities.append(gas_zone)
             game.show_banner('TEAR GAS DEPLOYED :: CROWD CONTROL!', rgb(140, 255, 100), 2.0)
         elif self.char_key == 'scout':
-            # IFG & Flare Grenade: бросок гранаты ингибиторного поля
             target_pos = my_pos + self.forward * 11.0
             floor_y = game.get_surface_height(target_pos.x, target_pos.z, my_pos.y)
             ifg_pos = Vec3(target_pos.x, floor_y, target_pos.z)
@@ -590,11 +743,9 @@ class SurvivorSkillsMixin:
             game.stage_entities.append(ifg)
             game.show_banner('ROCK AND STONE! :: IFG FIELD & FLARE DEPLOYED!', color.yellow, 2.2)
         elif self.char_key == 'm4a1':
-            # Dummy Link Expansion: спавнит до 4 клонов одновременно (если уже 4 — лечит всех клонов и спавнит недостающих)
             self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
             used_slots = {c.slot_idx for c in self.dummy_clones}
             spawned = 0
-            # За одно нажатие R призываем до 2 клонов (максимум 4 живых клона)
             for slot in range(4):
                 if len(self.dummy_clones) >= 4 or spawned >= 2:
                     break
@@ -613,4 +764,120 @@ class SurvivorSkillsMixin:
             game.show_banner(
                 f'DUMMY LINK ACTIVE :: ОТРЯД M4A1 [{active_links}x LINK] ({len(self.dummy_clones)}/4 КЛОНОВ)!',
                 rgb(95, 255, 135), 2.6
+            )
+        elif self.char_key == 'medic':
+            # Ульта Медика TF2:
+            # 1) Если прицел направлен на врага (<50% HP, для боссов <30% HP) — переманивает его на сторону игрока!
+            # 2) Если прицел направлен на союзника (или нет подходящего врага в прицеле) — активирует Убер-заряд и бафф союзников!
+            aim_dir = camera.forward
+            eye_pos = my_pos + Vec3(0, 1.55, 0)
+            best_enemy = None
+            best_dot = 0.84
+            for e in list(game.enemies):
+                if is_valid(e) and not getattr(e, 'is_ally', False) and e.enemy_type != 'mithrix':
+                    e_center = Vec3(*e.position) + Vec3(0, e.hit_height, 0)
+                    to_e = e_center - eye_pos
+                    if to_e.length() <= 32.0:
+                        dot = aim_dir.dot(to_e.normalized())
+                        if dot > best_dot:
+                            best_dot = dot
+                            best_enemy = e
+
+            if best_enemy is not None:
+                hp_pct = best_enemy.hp / max(1.0, best_enemy.max_hp)
+                req_pct = 0.30 if best_enemy.is_boss else 0.50
+                if hp_pct <= req_pct:
+                    best_enemy.convert_to_ally()
+                    e_p = Vec3(*best_enemy.position) + Vec3(0, best_enemy.hit_height, 0)
+                    LightningBeam(eye_pos, e_p, color.lime, 0.45)
+                    VisualFX(e_p, color.lime, 5.5, 0.4)
+                    game.show_banner(
+                        f'MIND CONTROL :: {best_enemy.enemy_type.upper()} ПЕРЕШЁЛ НА ВАШУ СТОРОНУ!',
+                        color.lime, 3.2
+                    )
+                    return
+
+            # Если врага под порог переманивания в прицеле нет — даём УБЕР-ЗАРЯД себе и всем союзникам!
+            self.uber_timer = 6.5
+            self.heal_amount(self.max_hp * 0.50)
+            self.shield = min(float(self.max_hp), self.shield + 50.0)
+            VisualFX(my_pos + Vec3(0, 1.2, 0), rgb(255, 55, 80), 7.5, 0.4)
+
+            allies = (
+                list(getattr(self, 'dummy_clones', []))
+                + list(getattr(self, 'mindustry_turrets', []))
+                + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]
+                + list(game.remote_players.values())
+            )
+            for al in allies:
+                if is_valid(al):
+                    al.hp = float(al.max_hp)
+                    if hasattr(al, 'damage'):
+                        al.damage *= 1.30
+                    LightningBeam(eye_pos, Vec3(*al.position) + Vec3(0, 1.2, 0), rgb(255, 55, 80), 0.35)
+                    VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), rgb(255, 55, 80), 3.5, 0.35)
+
+            game.show_banner('ÜBERCHARGE READY :: НЕУЯЗВИМОСТЬ И УСИЛЕНИЕ СОЮЗНИКОВ (6.5 СЕК)!', rgb(255, 75, 90), 3.0)
+
+        elif self.char_key == 'aigis':
+            # Persona: Palladion Strike — +45 щита и удар копьями света по врагам вокруг
+            self.shield = min(float(self.max_hp), self.shield + 45.0)
+            VisualFX(my_pos + Vec3(0, 1.6, 0), color.cyan, 8.0, 0.4)
+            targets = [e for e in game.enemies if is_valid(e) and not getattr(e, 'is_ally', False) and distance(Vec3(*e.position), my_pos) <= 28.0]
+            for i in range(6):
+                if i < len(targets) and is_valid(targets[i]):
+                    t_pos = Vec3(*targets[i].position)
+                else:
+                    ang = (i / 6.0) * math.pi * 2
+                    t_pos = my_pos + Vec3(math.cos(ang) * 9.0, 0, math.sin(ang) * 9.0)
+                OrbitalStrikeFX(t_pos, self.base_damage * 3.2)
+            game.show_banner('PERSONA :: PALLADION STRIKE!', color.cyan, 2.5)
+
+        elif self.char_key == 'reimu':
+            # Spell Card: Fantasy Seal — 10 радужных самонаводящихся сфер Данмаку
+            spawn_pos = my_pos + Vec3(0, 1.8, 0)
+            rainbow = [
+                rgb(255, 60, 80), rgb(255, 165, 45), color.yellow,
+                color.lime, color.cyan, rgb(185, 85, 255)
+            ]
+            for i in range(10):
+                ang = (i / 10.0) * math.pi * 2
+                d = Vec3(math.cos(ang), 0.25, math.sin(ang)).normalized()
+                col = rainbow[i % len(rainbow)]
+                Projectile(
+                    pos=spawn_pos, direction=d, speed=50.0,
+                    damage=self.base_damage * 1.9, scale_val=0.58,
+                    proj_color=col, is_player=True, aoe=4.0, homing=True
+                )
+            VisualFX(spawn_pos, rgb(255, 75, 95), 7.5, 0.4)
+            game.show_banner('SPELL CARD :: FANTASY SEAL!', rgb(255, 85, 100), 2.5)
+
+        elif self.char_key == 'mindustry':
+            # Build Mode: Spectre & Mend Turret (тратит 20% от макс. HP)
+            hp_cost = self.max_hp * 0.20
+            if self.hp <= hp_cost + 2.0:
+                self.r_cd = 1.0
+                game.show_banner('НЕДОСТАТОЧНО HP ДЛЯ СТРОИТЕЛЬСТВА ТУРЕЛИ (НУЖНО >20% HP)!', color.red, 2.0)
+                return
+
+            self.hp = max(1.0, self.hp - hp_cost)
+            self.mindustry_turrets = [t for t in self.mindustry_turrets if is_valid(t)]
+            if len(self.mindustry_turrets) >= 4:
+                oldest = self.mindustry_turrets.pop(0)
+                oldest.is_dead = True
+                destroy(oldest)
+
+            build_pos = my_pos + self.forward * 4.2
+            floor_y = game.get_surface_height(build_pos.x, build_pos.z, my_pos.y)
+            turret_pos = Vec3(build_pos.x, floor_y, build_pos.z)
+            slot_idx = len(self.mindustry_turrets)
+            turret = MindustryTurret(self, turret_pos, slot_idx=slot_idx)
+            self.mindustry_turrets.append(turret)
+            game.stage_entities.append(turret)
+
+            LightningBeam(my_pos + Vec3(0, 1.4, 0), turret_pos + Vec3(0, 1.0, 0), color.yellow, 0.35)
+            VisualFX(turret_pos + Vec3(0, 1.0, 0), color.lime, 3.8, 0.35)
+            game.show_banner(
+                f'BUILD MODE :: ПОСТРОЕНА ТУРЕЛЬ SPECTRE [{len(self.mindustry_turrets)}/4] (-{int(hp_cost)} HP)!',
+                rgb(255, 215, 65), 2.6
             )

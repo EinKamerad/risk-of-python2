@@ -210,5 +210,89 @@ SURVIVOR_CLASSES = {
             'shift': {'name': 'Tactical Evasion', 'cd': 3.6, 'desc': '[Shift] Тактический рывок с получением +25 щита и приказом клонам дать залп.'},
             'r': {'name': 'Dummy Link (До 4 Клонов)', 'cd': 7.5, 'desc': '[R] Спавнит ИИ-клона с вашими предметами (макс 4). При смерти вы переселяетесь в живого клона (КД навыков 12с)!'}
         }
+    },
+    'medic': {
+        'name': 'MEDIC (TF2)',
+        'subtitle': 'Безумный Доктор Teufort [ÜBER & MIND CONTROL]',
+        'icon': 'MED',
+        'hp': 130,
+        'speed': 10.2,
+        'damage': 14.0,
+        'fire_rate': 6.2,
+        'proj_speed': 64.0,
+        'proj_scale': 0.22,
+        'aoe': 0.0,
+        'body_color': rgb(235, 238, 245),
+        'armor_color': rgb(205, 38, 45),
+        'visor_color': rgb(255, 75, 75),
+        'skills': {
+            'm1': {'name': 'Crusader\'s Syringe Gun', 'cd': 0.16, 'desc': '[ЛКМ] Стреляет шприцами: наносит урон врагам и ЛЕЧИТ союзников при попадании!'},
+            'm2': {'name': 'Kritzkrieg Medi-Beam', 'cd': 3.4, 'desc': '[ПКМ] Луч Лечебной Пушки: лечит и усиливает союзника (+барьер) или выкачивает HP из врага.'},
+            'shift': {'name': 'Amputator Healing Surge', 'cd': 4.2, 'desc': '[Shift] Рывок с ударом пилой Ubersaw и целебным импульсом (+25% HP всем вокруг).'},
+            'r': {'name': 'ÜberCharge / Mind Control', 'cd': 10.5, 'desc': '[R] На врага (<50% HP, босс <30% HP) — ПЕРЕМАНИВАЕТ его за вас! На союзника/себя — УБЕР-ЗАРЯД на 6.5с!'}
+        }
+    },
+    'aigis': {
+        'name': 'AIGIS (PERSONA 3)',
+        'subtitle': 'Anti-Shadow Weapon [ORGIA & PALLADION]',
+        'icon': 'AIG',
+        'hp': 140,
+        'speed': 10.6,
+        'damage': 13.5,
+        'fire_rate': 8.2,
+        'proj_speed': 76.0,
+        'proj_scale': 0.20,
+        'aoe': 0.0,
+        'body_color': rgb(240, 242, 250),
+        'armor_color': rgb(235, 195, 55),
+        'visor_color': rgb(65, 195, 255),
+        'skills': {
+            'm1': {'name': 'Finger Vulcan Guns', 'cd': 0.12, 'desc': '[ЛКМ] Ураганный пулемётный огонь из пальцев-стволов правой руки.'},
+            'm2': {'name': 'Pandora Grenade Cannon', 'cd': 3.8, 'desc': '[ПКМ] Тяжёлый фугасный залп из наручного гранатомёта (300% урона в радиусе 5.2м).'},
+            'shift': {'name': 'Orgia Mode Overdrive', 'cd': 5.0, 'desc': '[Shift] Реактивный взлёт и режим Orgia на 5.5 сек (+50% атаки, +45% скорости и +35% урона).'},
+            'r': {'name': 'Persona: Palladion Strike', 'cd': 9.5, 'desc': '[R] Призывает Персону Палладион: обрушивает копья света на врагов вокруг и даёт +45 щита.'}
+        }
+    },
+    'reimu': {
+        'name': 'HAKUREI REIMU',
+        'subtitle': 'Жрица Храма Хакурей (Touhou Project)',
+        'icon': 'RMU',
+        'hp': 105,
+        'speed': 11.2,
+        'damage': 17.5,
+        'fire_rate': 4.8,
+        'proj_speed': 58.0,
+        'proj_scale': 0.26,
+        'aoe': 1.2,
+        'body_color': rgb(225, 42, 52),
+        'armor_color': rgb(245, 245, 250),
+        'visor_color': rgb(255, 230, 80),
+        'skills': {
+            'm1': {'name': 'Homing Ofuda Amulets', 'cd': 0.21, 'desc': '[ЛКМ] Выпускает парные красно-белые бумажные амулеты с самонаведением.'},
+            'm2': {'name': 'Yin-Yang Persuasion Orb', 'cd': 4.0, 'desc': '[ПКМ] Сфера Инь-Ян: рикошетит до 6 раз между врагами с AoE-всплесками!'},
+            'shift': {'name': 'Fantasy Nature Float', 'cd': 3.8, 'desc': '[Shift] Воздушный рывок сквозь измерения (+щит и выпуск 4 защитных талисманов).'},
+            'r': {'name': 'Spell Card: Fantasy Seal', 'cd': 9.5, 'desc': '[R] Град из 10 гигантских радужных сфер Данмаку с самонаведением и мощным взрывом!'}
+        }
+    },
+    'mindustry': {
+        'name': 'GAMMA CORE SHIP',
+        'subtitle': 'Командный Корабль Ядра (Mindustry)',
+        'icon': 'MND',
+        'hp': 150,
+        'speed': 11.5,
+        'damage': 15.0,
+        'fire_rate': 5.2,
+        'proj_speed': 68.0,
+        'proj_scale': 0.24,
+        'aoe': 1.0,
+        'body_color': rgb(245, 185, 45),
+        'armor_color': rgb(62, 68, 82),
+        'visor_color': rgb(255, 235, 95),
+        'skills': {
+            'm1': {'name': 'Twin Mount Lasers', 'cd': 0.19, 'desc': '[ЛКМ] Спаренные плазменные пушки корабля, бьющие с обоих крыльев.'},
+            'm2': {'name': 'Surge Alloy Blast', 'cd': 3.8, 'desc': '[ПКМ] Энергетический снаряд Кинетического Сплава, поражающий врагов молниями.'},
+            'shift': {'name': 'Core Engine Overdrive', 'cd': 3.5, 'desc': '[Shift] Реактивный полёт двигателей с авто-ремонтом корпуса (+15% HP).'},
+            'r': {'name': 'Build Mode: Spectre & Mend Turret', 'cd': 6.0, 'desc': '[R - Тратит 20% HP] Строит Турель Mindustry (до 4 шт.), которая наследует предметы, бьёт врагов и лечит вас!'}
+        }
     }
 }

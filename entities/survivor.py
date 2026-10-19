@@ -7,9 +7,13 @@ from entities.fx import VisualFX, LightningBeam
 from entities.survivor_skills import SurvivorSkillsMixin
 
 
+def distance_2d(a, b):
+    return math.hypot(a[0] - b[0], a[2] - b[2])
+
+
 class Survivor(Entity, SurvivorSkillsMixin):
     def __init__(self, char_key='commando'):
-        super().__init__(position=(0, 0, 0))
+        super().__init__(position=(0, 1.8 if char_key == 'mindustry' else 0, 0))
         self.char_key = char_key
         cfg = SURVIVOR_CLASSES[char_key]
 
@@ -30,7 +34,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.gold = 35
 
         self.vel_y = 0.0
-        self.grounded = True
+        self.grounded = (char_key != 'mindustry')
         self.jumps_left = 1
         self.space_was_pressed = False
         self.shift_was_pressed = False
@@ -45,6 +49,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.barrage_shots = 0
         self.barrage_timer = 0.0
         self.dragon_install_timer = 0.0
+        self.uber_timer = 0.0
+        self.orgia_timer = 0.0
         self.shield_stance = False
 
         # Состояние крюка-кошки Скаута (DRG)
@@ -53,30 +59,67 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.grapple_timer = 0.0
         self.scout_speed_buff = 0.0
 
-        # Состояние клонов Dummy Link и блокировки навыков M4A1 (GFL)
+        # Состояние клонов Dummy Link (M4A1) и турелей Mindustry
         self.dummy_clones = []
+        self.mindustry_turrets = []
         self.skill_lock_timer = 0.0
 
+        # Таймеры предметов
         self.predatory_timer = 0.0
         self.opal_timer = 0.0
+        self.safer_spaces_timer = 0.0
         self.medkit_timer = 0.0
+        self.stationary_timer = 0.0
+        self.bungus_tick_timer = 0.0
+        self.tesla_timer = 0.8
+        self.frost_relic_timer = 0.0
+        self.frost_tick_timer = 0.0
+
         self.shoot_side = 0
         self.is_moving = False
         self.net_sync_timer = 0.0
 
         self.parts = build_survivor_mesh(self, char_key)
 
+        self.bungus_ring = Entity(
+            parent=self, model='sphere', scale=(11.0, 0.12, 11.0),
+            y=0.08, color=rgb(85, 255, 120, 65), unlit=True, enabled=False
+        )
+        self.frost_ring = Entity(
+            parent=self, model='diamond', scale=(13.0, 0.22, 13.0),
+            y=0.9, color=rgb(110, 235, 255, 90), unlit=True, enabled=False
+        )
+
         self.cam_pivot = Entity(parent=self, y=2.15)
         camera.parent = self.cam_pivot
         camera.position = (0.85, 0.75, -8.8)
         camera.rotation = (6, 0, 0)
+
+    def heal_amount(self, amount):
+        """Универсальное лечение выжившего с поддержкой барьера Aegis при избыточном лечении"""
+        if amount <= 0 or self.hp <= 0:
+            return
+        max_h = float(self.max_hp)
+        new_hp = self.hp + amount
+        if new_hp > max_h:
+            overflow = new_hp - max_h
+            self.hp = max_h
+            aegis_stacks = self.items.get('aegis', 0)
+            if aegis_stacks > 0:
+                shield_gain = overflow * min(1.0, 0.5 * aegis_stacks)
+                max_shield = max_h * aegis_stacks
+                self.shield = min(max(self.shield, max_shield), self.shield + shield_gain)
+        else:
+            self.hp = new_hp
 
     @property
     def base_damage(self):
         raw = SURVIVOR_CLASSES[self.char_key]['damage']
         glass_mult = 2.0 ** self.items.get('shaped_glass', 0)
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
-        return raw * glass_mult * tonic_mult
+        orgia_mult = 1.35 if self.orgia_timer > 0 else 1.0
+        uber_mult = 1.35 if self.uber_timer > 0 else 1.0
+        return raw * glass_mult * tonic_mult * orgia_mult * uber_mult
 
     @base_damage.setter
     def base_damage(self, val):
@@ -84,7 +127,12 @@ class Survivor(Entity, SurvivorSkillsMixin):
 
     @property
     def max_hp(self):
-        raw = self.base_max_hp + 25 * self.items['bison_steak'] + self.infusion_bonus
+        raw = (
+            self.base_max_hp
+            + 25 * self.items['bison_steak']
+            + 100 * self.items.get('tarrasque', 0)
+            + self.infusion_bonus
+        )
         trans_mult = 1.0 + 0.50 * self.items.get('transcendence', 0)
         flux_mult = 2.0 ** self.items.get('lunar_pauldron', 0)
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
@@ -98,6 +146,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
     @property
     def move_speed(self):
         di_mult = 1.45 if self.dragon_install_timer > 0 else 1.0
+        orgia_mult = 1.45 if self.orgia_timer > 0 else 1.0
+        uber_mult = 1.25 if self.uber_timer > 0 else 1.0
         stance_mult = 0.65 if self.shield_stance else 1.0
         scout_mult = 1.35 if self.scout_speed_buff > 0 else 1.0
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
@@ -108,15 +158,24 @@ class Survivor(Entity, SurvivorSkillsMixin):
             + 0.08 * self.items['energy_drink']
             + 0.12 * self.items['red_whip']
         )
-        return self.base_speed * spd_bonus * di_mult * stance_mult * scout_mult * tonic_mult * flux_pen
+        return (
+            self.base_speed * spd_bonus * di_mult * orgia_mult
+            * uber_mult * stance_mult * scout_mult * tonic_mult * flux_pen
+        )
 
     @property
     def fire_rate(self):
         di_mult = 1.65 if self.dragon_install_timer > 0 else 1.0
+        orgia_mult = 1.50 if self.orgia_timer > 0 else 1.0
+        uber_mult = 1.50 if self.uber_timer > 0 else 1.0
         stance_mult = 1.45 if self.shield_stance else 1.0
         tonic_mult = 1.0 + 0.25 * self.items.get('spinel_tonic', 0)
         pred_bonus = 0.12 * self.items['predatory'] if self.predatory_timer > 0 else 0.0
-        return self.base_fire_rate * (1.0 + 0.15 * self.items['syringe'] + pred_bonus) * di_mult * stance_mult * tonic_mult
+        return (
+            self.base_fire_rate
+            * (1.0 + 0.15 * self.items['syringe'] + pred_bonus)
+            * di_mult * orgia_mult * uber_mult * stance_mult * tonic_mult
+        )
 
     @property
     def block_chance(self):
@@ -143,6 +202,7 @@ class Survivor(Entity, SurvivorSkillsMixin):
             return
 
         self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
+        self.mindustry_turrets = [t for t in self.mindustry_turrets if is_valid(t)]
         prev_y = self.y
         sens = game.settings.get('sensitivity', 45)
         if mouse.locked:
@@ -155,16 +215,25 @@ class Survivor(Entity, SurvivorSkillsMixin):
             move_dir = (self.forward * move_input.z + self.right * move_input.x).normalized()
             self.position += move_dir * self.move_speed * time.dt
 
-            walk_cycle = time.time() * (11.0 + self.items['hoof'] * 1.2)
-            swing = math.sin(walk_cycle) * (22.0 if self.shield_stance else 38.0)
-            self.parts['left_leg'].rotation_x = swing
-            self.parts['right_leg'].rotation_x = -swing
-            self.parts['torso'].y = 1.26 + abs(math.cos(walk_cycle)) * 0.08
-            self.parts['torso'].rotation_z = math.sin(walk_cycle) * 3.0
+            if self.char_key == 'mindustry':
+                # Корабль Mindustry НЕ качает двигателями как ногами, а плавно кренится при полёте
+                self.parts['left_leg'].rotation_x = 0
+                self.parts['right_leg'].rotation_x = 0
+                self.parts['torso'].y = 1.35 + math.sin(time.time() * 4.0) * 0.05
+                self.parts['torso'].rotation_z = lerp(self.parts['torso'].rotation_z, -move_input.x * 14.0, time.dt * 8)
+                self.parts['torso'].rotation_x = lerp(self.parts['torso'].rotation_x, move_input.z * 10.0, time.dt * 8)
+            else:
+                walk_cycle = time.time() * (11.0 + self.items['hoof'] * 1.2)
+                swing = math.sin(walk_cycle) * (22.0 if self.shield_stance else 38.0)
+                self.parts['left_leg'].rotation_x = swing
+                self.parts['right_leg'].rotation_x = -swing
+                self.parts['torso'].y = 1.26 + abs(math.cos(walk_cycle)) * 0.08
+                self.parts['torso'].rotation_z = math.sin(walk_cycle) * 3.0
         else:
             self.parts['left_leg'].rotation_x = lerp(self.parts['left_leg'].rotation_x, 0, time.dt * 10)
             self.parts['right_leg'].rotation_x = lerp(self.parts['right_leg'].rotation_x, 0, time.dt * 10)
-            self.parts['torso'].y = 1.26 + math.sin(time.time() * 2.5) * 0.03
+            base_torso_y = 1.35 if self.char_key == 'mindustry' else 1.26
+            self.parts['torso'].y = base_torso_y + math.sin(time.time() * 2.5) * 0.04
             self.parts['torso'].rotation_z = lerp(self.parts['torso'].rotation_z, 0, time.dt * 10)
 
         self.m1_cd = max(0.0, self.m1_cd - time.dt)
@@ -175,20 +244,103 @@ class Survivor(Entity, SurvivorSkillsMixin):
         self.skill_lock_timer = max(0.0, self.skill_lock_timer - time.dt)
         self.predatory_timer = max(0.0, self.predatory_timer - time.dt)
         self.opal_timer = max(0.0, self.opal_timer - time.dt)
-        self.shield = max(0.0, self.shield - 1.5 * time.dt)
+        self.safer_spaces_timer = max(0.0, self.safer_spaces_timer - time.dt)
+
+        # Plasma Shrimp поддерживает минимальный регенерирующий щит, если не получать урон
+        min_shrimp_shield = 20.0 * self.items.get('plasma_shrimp', 0)
+        if self.shield > min_shrimp_shield:
+            self.shield = max(min_shrimp_shield, self.shield - 1.5 * time.dt)
+        elif self.shield < min_shrimp_shield:
+            self.shield = min(min_shrimp_shield, self.shield + 4.0 * time.dt)
 
         if self.medkit_timer > 0:
             self.medkit_timer -= time.dt
             if self.medkit_timer <= 0 and self.items['medkit'] > 0:
                 heal = 5.0 + 10.0 * self.items['medkit']
-                self.hp = min(float(self.max_hp), self.hp + heal)
+                self.heal_amount(heal)
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), color.green, 2.2, 0.25)
 
         if self.dragon_install_timer > 0:
             self.dragon_install_timer -= time.dt
-            self.hp = min(float(self.max_hp), self.hp + 6.0 * time.dt)
+            self.heal_amount(6.0 * time.dt)
             if random.random() < 0.25:
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(255, 110, 20), 2.2, 0.18)
+
+        if self.uber_timer > 0:
+            self.uber_timer -= time.dt
+            self.heal_amount(12.0 * time.dt)
+            if random.random() < 0.30:
+                VisualFX(Vec3(*self.position) + Vec3(0, 1.2, 0), rgb(255, 65, 85), 2.2, 0.16)
+
+        if self.orgia_timer > 0:
+            self.orgia_timer -= time.dt
+            if random.random() < 0.25:
+                VisualFX(Vec3(*self.position) + Vec3(0, 1.3, 0), color.gold, 2.0, 0.15)
+
+        # Bustling Fungus (Bungus): зона лечения при стоянии/зависании на месте > 1.2с
+        bungus_stacks = self.items.get('bungus', 0)
+        fly_vert = bool(held_keys['space'] or held_keys['control'] or held_keys['left control'] or held_keys['right control']) if self.char_key == 'mindustry' else False
+        if not self.is_moving and not fly_vert and (self.grounded or self.char_key == 'mindustry') and self.dash_timer <= 0 and not self.grapple_active:
+            self.stationary_timer += time.dt
+        else:
+            self.stationary_timer = 0.0
+
+        if bungus_stacks > 0 and self.stationary_timer >= 1.2:
+            b_rad = 5.0 + 1.2 * bungus_stacks
+            self.bungus_ring.enabled = True
+            self.bungus_ring.scale = (b_rad * 2.0, 0.12, b_rad * 2.0)
+            self.bungus_tick_timer -= time.dt
+            if self.bungus_tick_timer <= 0:
+                self.bungus_tick_timer = 0.45
+                pct_heal = (0.045 * bungus_stacks) * 0.45
+                self.heal_amount(self.max_hp * pct_heal + 2.0 * bungus_stacks)
+                my_p = Vec3(*self.position)
+                VisualFX(my_p + Vec3(0, 0.5, 0), rgb(95, 255, 125), 2.2, 0.22)
+                for al in list(self.dummy_clones) + list(self.mindustry_turrets) + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]:
+                    if is_valid(al) and distance_2d(my_p, Vec3(*al.position)) <= b_rad:
+                        al.hp = min(float(al.max_hp), al.hp + al.max_hp * pct_heal + 3.0 * bungus_stacks)
+        else:
+            self.bungus_ring.enabled = False
+
+        # Unstable Tesla Coil
+        tesla_stacks = self.items.get('tesla_coil', 0)
+        if tesla_stacks > 0:
+            self.tesla_timer -= time.dt
+            if self.tesla_timer <= 0:
+                self.tesla_timer = 1.2
+                my_p = Vec3(*self.position) + Vec3(0, 1.4, 0)
+                t_rad = 15.0 + 2.5 * tesla_stacks
+                max_t = 2 + tesla_stacks
+                hit_t = 0
+                for e in list(game.enemies):
+                    if is_valid(e) and not getattr(e, 'is_ally', False):
+                        e_pos = Vec3(*e.position) + Vec3(0, e.hit_height, 0)
+                        if distance(my_p, e_pos) <= t_rad:
+                            LightningBeam(my_p, e_pos, color.cyan, 0.20)
+                            e.take_damage(self.base_damage * (1.15 * tesla_stacks))
+                            hit_t += 1
+                            if hit_t >= max_t:
+                                break
+
+        # Frost Relic
+        frost_stacks = self.items.get('frost_relic', 0)
+        if self.frost_relic_timer > 0 and frost_stacks > 0:
+            self.frost_relic_timer -= time.dt
+            f_rad = 6.5 + 1.5 * frost_stacks
+            self.frost_ring.enabled = True
+            self.frost_ring.scale = (f_rad * 2.0, 0.22, f_rad * 2.0)
+            self.frost_ring.rotation_y += 140 * time.dt
+            self.frost_tick_timer -= time.dt
+            if self.frost_tick_timer <= 0:
+                self.frost_tick_timer = 0.35
+                my_p = Vec3(*self.position)
+                for e in list(game.enemies):
+                    if is_valid(e) and not getattr(e, 'is_ally', False):
+                        if distance_2d(my_p, Vec3(*e.position)) <= f_rad and abs(e.y - my_p.y) <= 4.5:
+                            e.slow_timer = max(e.slow_timer, 1.5)
+                            e.take_damage(self.base_damage * (0.65 * frost_stacks))
+        else:
+            self.frost_ring.enabled = False
 
         shift_down = bool(held_keys['shift'])
         if shift_down and not self.shift_was_pressed and self.shift_cd <= 0:
@@ -199,9 +351,40 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.use_r_skill()
 
         dt_step = max(0.001, min(time.dt, 0.05))
+        floor_h = game.get_surface_height(self.position.x, self.position.z, self.y, prev_y=prev_y)
 
-        # Полет на крюке-кошке Скаута (Grappling Hook)
-        if self.grapple_active:
+        # 1. ПОСТОЯННЫЙ ПОЛЁТ ДЛЯ КОСМИЧЕСКОГО КОРАБЛЯ MINDUSTRY (Space = Вверх, Ctrl = Вниз)
+        if self.char_key == 'mindustry':
+            if self.dash_timer > 0:
+                self.position += self.dash_vector * time.dt
+                self.dash_timer -= time.dt
+                self.parts['torso'].rotation_x = 22.0
+            elif not self.is_moving:
+                self.parts['torso'].rotation_x = lerp(self.parts['torso'].rotation_x, 0, time.dt * 10)
+
+            ascend = bool(held_keys['space'])
+            descend = bool(held_keys['control'] or held_keys['left control'] or held_keys['right control'] or held_keys['c'])
+            fly_spd = 11.5 + 1.2 * self.items['feather']
+            if ascend and not descend:
+                self.vel_y = lerp(self.vel_y, fly_spd, dt_step * 9.0)
+            elif descend and not ascend:
+                self.vel_y = lerp(self.vel_y, -fly_spd, dt_step * 9.0)
+            else:
+                self.vel_y = lerp(self.vel_y, 0.0, dt_step * 10.0)
+
+            self.y += self.vel_y * dt_step
+            min_hover_y = floor_h + 0.45
+            max_fly_y = (COLOSSEUM_Y + 45.0) if game.special_mode == 'moon' else 55.0
+            if self.y < min_hover_y:
+                self.y = min_hover_y
+                self.vel_y = 0.0
+            elif self.y > max_fly_y:
+                self.y = max_fly_y
+                self.vel_y = 0.0
+            self.grounded = (self.y <= min_hover_y + 0.25)
+
+        # 2. Полет на крюке-кошке Скаута (Grappling Hook)
+        elif self.grapple_active:
             self.grapple_timer -= dt_step
             my_pos = Vec3(*self.position)
             to_anchor = self.grapple_target - (my_pos + Vec3(0, 1.2, 0))
@@ -217,6 +400,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.grounded = False
                 if random.random() < 0.45:
                     LightningBeam(Vec3(*self.position) + Vec3(0, 1.4, 0), self.grapple_target, color.cyan, 0.09)
+
+        # 3. Обычная физика прыжков и гравитации
         else:
             if self.dash_timer > 0:
                 self.position += self.dash_vector * time.dt
@@ -240,19 +425,18 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.vel_y -= 26.0 * dt_step
             self.y += self.vel_y * dt_step
 
+            if self.y <= floor_h:
+                self.y = floor_h
+                self.vel_y = 0.0
+                self.grounded = True
+                self.jumps_left = self.max_jumps
+
         if self.barrage_shots > 0:
             self.barrage_timer -= time.dt
             if self.barrage_timer <= 0:
                 self.barrage_timer = 0.065
                 self.barrage_shots -= 1
                 self.fire_primary_projectile(damage_mult=1.25, col_override=color.cyan)
-
-        floor_h = game.get_surface_height(self.position.x, self.position.z, self.y, prev_y=prev_y)
-        if self.y <= floor_h:
-            self.y = floor_h
-            self.vel_y = 0.0
-            self.grounded = True
-            self.jumps_left = self.max_jumps
 
         resolved = game.resolve_horizontal_collision(Vec3(*self.position), radius=0.72, entity_y=self.y)
         bound = getattr(game, 'world_bound', 58.0)
@@ -284,7 +468,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
         else:
             camera.z = -base_dist
 
-        self.hp = min(float(self.max_hp), self.hp + 1.5 * time.dt)
+        regen_rate = 1.5 + (self.max_hp * 0.025 * self.items.get('tarrasque', 0))
+        self.hp = min(float(self.max_hp), self.hp + regen_rate * time.dt)
 
         if self.parts['halo']:
             self.parts['halo'].rotation_z += 95 * time.dt
@@ -312,6 +497,17 @@ class Survivor(Entity, SurvivorSkillsMixin):
 
     def take_damage(self, amount):
         game = ctx.game
+        if self.uber_timer > 0:
+            VisualFX(Vec3(*self.position) + Vec3(0, 1.4, 0), rgb(255, 65, 85), 2.0, 0.2)
+            return
+
+        # Safer Spaces (Предмет Пустоты): гарантированный блок удара с перезарядкой
+        if self.items.get('safer_spaces', 0) > 0 and self.safer_spaces_timer <= 0:
+            self.safer_spaces_timer = max(2.5, 12.0 * (0.85 ** (self.items['safer_spaces'] - 1)))
+            VisualFX(Vec3(*self.position) + Vec3(0, 1.3, 0), rgb(205, 85, 255), 2.6, 0.28)
+            game.show_banner('УРОН ПОГЛОЩЁН БЕЗДНОЙ! (Safer Spaces)', rgb(205, 85, 255), 1.0)
+            return
+
         if random.random() < self.block_chance:
             VisualFX(Vec3(*self.position) + Vec3(0, 1.4, 0), color.cyan, 2.2, 0.25)
             game.show_banner('ЗАБЛОКИРОВАНО! (Tougher Times)', color.cyan, 0.9)
@@ -336,6 +532,22 @@ class Survivor(Entity, SurvivorSkillsMixin):
         if self.items['medkit'] > 0:
             self.medkit_timer = 1.1
 
+        razor_stacks = self.items.get('razorwire', 0)
+        if razor_stacks > 0 and game:
+            my_p = Vec3(*self.position) + Vec3(0, 1.3, 0)
+            r_rad = 18.0 + 3.0 * razor_stacks
+            max_targets = 3 + 2 * razor_stacks
+            hit_c = 0
+            for e in list(game.enemies):
+                if is_valid(e) and not getattr(e, 'is_ally', False):
+                    e_pos = Vec3(*e.position) + Vec3(0, e.hit_height, 0)
+                    if distance(my_p, e_pos) <= r_rad:
+                        LightningBeam(my_p, e_pos, rgb(185, 235, 115), 0.18)
+                        e.take_damage(self.base_damage * (1.6 * razor_stacks))
+                        hit_c += 1
+                        if hit_c >= max_targets:
+                            break
+
         if self.shield > 0:
             absorbed = min(self.shield, dmg)
             self.shield -= absorbed
@@ -343,7 +555,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
 
         self.hp -= dmg
         if self.hp <= 0:
-            # СПАСЕНИЕ ЧЕРЕЗ DUMMY LINK (M4A1): переселение сознания в живого клона!
             self.dummy_clones = [c for c in self.dummy_clones if is_valid(c)]
             if self.char_key == 'm4a1' and self.dummy_clones:
                 host_clone = self.dummy_clones.pop(0)
@@ -359,7 +570,6 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.hp = float(self.max_hp)
                 self.shield = 35.0
 
-                # Штраф после переселения в клона: 12 секунд доступны только выстрелы ЛКМ (M1)!
                 self.skill_lock_timer = 12.0
                 self.m2_cd = max(self.m2_cd, 12.0)
                 self.shift_cd = max(self.shift_cd, 12.0)
