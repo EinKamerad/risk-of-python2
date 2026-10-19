@@ -8,6 +8,9 @@ from entities.projectile import Projectile
 from entities.boss_ai import BossAIMixin
 from world.lunar import COLOSSEUM_Y
 
+def distance_2d(a, b):
+    """Переопределяет distance_2d на горизонтальную плоскость X-Z для 3D-мира"""
+    return math.hypot(a[0] - b[0], a[2] - b[2])
 
 class Enemy(Entity, BossAIMixin):
     _next_id = 1

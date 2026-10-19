@@ -6,6 +6,9 @@ from entities.fx import VisualFX, LightningBeam, OrbitalStrikeFX, LunarShockwave
 from entities.projectile import Projectile
 from world.lunar import COLOSSEUM_Y, COLOSSEUM_RADIUS
 
+def distance_2d(a, b):
+    """Переопределяет distance_2d на горизонтальную плоскость X-Z для 3D-мира"""
+    return math.hypot(a[0] - b[0], a[2] - b[2])
 
 class BossAIMixin:
     def update_boss_ai(self, game, my_pos, p_pos, dist, is_local_target, eff_speed, t):

@@ -13,6 +13,7 @@ class Teleporter(Entity):
         self.zone_radius = 18.0
         self.aligned_to_moon = False
         self.align_cd = 0.0
+        self.spawned_blue_portal = None
 
         Entity(parent=self, model='cube', scale=(6.2, 0.3, 6.2), y=0.15, color=rgb(50, 55, 65), collider='box')
         Entity(parent=self, model='cube', scale=(4.4, 0.45, 4.4), y=0.38, color=rgb(70, 75, 88), collider='box')
@@ -61,6 +62,17 @@ class Teleporter(Entity):
             if game:
                 game.show_banner('ГРАНИ ТЕЛЕПОРТА ВЫРОВНЕНЫ С ПЛАНЕТОЙ', color.orange, 2.5)
 
+    def _try_spawn_blue_portal(self, game, my_pos):
+        if getattr(game, 'blue_orb_spawned', False) and self.spawned_blue_portal is None:
+            game.blue_orb_spawned = False
+            # Спавним Синий Портал на 13 метров ближе к центру карты, чтобы зоны [E] никогда не перекрывались
+            to_center = Vec3(-my_pos.x, 0, -my_pos.z)
+            dir_vec = to_center.normalized() if to_center.length() > 1.0 else Vec3(-1, 0, 0)
+            bp_pos = my_pos + dir_vec * 13.0
+            bp = BluePortal(bp_pos, target_mode='bazaar')
+            self.spawned_blue_portal = bp
+            game.stage_entities.append(bp)
+
     def activate_teleporter(self, boss_type=None, from_network=False):
         if self.state != 'idle':
             return
@@ -83,14 +95,15 @@ class Teleporter(Entity):
         self.core.y = 2.6 + math.sin(time.time() * 3.2) * 0.35
         self.core.rotation_y += 75 * time.dt
         my_pos = Vec3(*self.position)
-        dist = distance(my_pos, Vec3(*game.player.position))
+        p_pos = Vec3(*game.player.position)
+        dist = distance(my_pos, p_pos)
 
         if self.state == 'idle':
             self.label.enabled = (dist < 12.5)
             if dist < 5.8 and held_keys['f'] and self.align_cd <= 0:
                 self.align_cd = 0.45
                 self.toggle_alignment()
-            if dist < 5.5 and held_keys['e']:
+            if dist < 5.0 and held_keys['e']:
                 self.activate_teleporter(from_network=False)
 
         elif self.state == 'charging':
@@ -120,14 +133,18 @@ class Teleporter(Entity):
                 dest_str = 'ЛУНА (К МИТРИКСУ!)' if self.aligned_to_moon else 'СЛЕДУЮЩИЙ ЭТАП'
                 self.label.text = f'[E] Войти в Телепорт -> {dest_str}'
                 game.show_banner('ТЕЛЕПОРТ ЗАРЯЖЕН! НАЖМИТЕ [E] ДЛЯ ПРЫЖКА', color.cyan, 3.5)
-
-                if getattr(game, 'blue_orb_spawned', False):
-                    game.blue_orb_spawned = False
-                    bp = BluePortal(my_pos + Vec3(-7.5, 0, 0), target_mode='bazaar')
-                    game.stage_entities.append(bp)
+                self._try_spawn_blue_portal(game, my_pos)
 
         elif self.state == 'ready':
-            if dist < 5.8 and held_keys['e']:
+            self._try_spawn_blue_portal(game, my_pos)
+
+            # Если рядом открыт Синий Портал и игрок ближе к нему — уступаем нажатие [E] Синему Порталу
+            if self.spawned_blue_portal and not self.spawned_blue_portal.is_empty():
+                bp_dist = distance(Vec3(*self.spawned_blue_portal.position), p_pos)
+                if bp_dist < 5.5 and bp_dist < dist:
+                    return
+
+            if dist < 4.5 and held_keys['e']:
                 if self.aligned_to_moon:
                     game.enter_moon_stage()
                 else:
