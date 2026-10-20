@@ -42,8 +42,14 @@ def input(key):
                 ctx.game.select_lobby_character(key_map[key])
             elif key == 'escape':
                 ctx.game.leave_lobby_to_main()
-        elif ctx.game.menu_state in ('mp_connect', 'settings') and key == 'escape':
+        elif ctx.game.menu_state in ('mp_connect', 'settings', 'logbook') and key == 'escape':
             ctx.game.show_screen('main')
+
+        if ctx.game.menu_state in ('lobby', 'logbook'):
+            if key == 'scroll up':
+                ctx.game.adjust_preview_zoom(0.12)
+            elif key == 'scroll down':
+                ctx.game.adjust_preview_zoom(-0.12)
     elif key == 'escape':
         mouse.locked = not mouse.locked
 
