@@ -192,27 +192,6 @@ class Enemy(Entity, BossAIMixin):
                 candidates.append((distance_2d(my_pos, Vec3(*rp.position)), Vec3(*rp.position), rp))
         for other in game.enemies:
             if other is not self and is_valid(other) and getattr(other, 'is_ally', False):
-                    enemy_cands.append((distance_2d(my_pos, Vec3(*other.position)), other))
-            if enemy_cands:
-                enemy_cands.sort(key=lambda x: x[0])
-                dist, target_ent = enemy_cands[0]
-                return Vec3(*target_ent.position), dist, target_ent
-            # Если врагов рядом нет — следует за игроком на дистанции 6м
-            if is_valid(game.player):
-                p_pos = Vec3(*game.player.position)
-                d = distance_2d(my_pos, p_pos)
-                if d > 6.5:
-                    return p_pos, d, None
-            return None, 999.0, None
-
-        candidates = []
-        if is_valid(game.player):
-            candidates.append((distance_2d(my_pos, Vec3(*game.player.position)), Vec3(*game.player.position), game.player))
-        for rp in game.remote_players.values():
-            if is_valid(rp):
-                candidates.append((distance_2d(my_pos, Vec3(*rp.position)), Vec3(*rp.position), rp))
-        for other in game.enemies:
-            if other is not self and is_valid(other) and getattr(other, 'is_ally', False):
                 candidates.append((distance_2d(my_pos, Vec3(*other.position)), Vec3(*other.position), other))
         if not candidates:
             return None, 999.0, None
