@@ -56,6 +56,9 @@ class BluePortal(Entity):
     def __init__(self, pos, target_mode='bazaar'):
         super().__init__(position=Vec3(*pos))
         self.target_mode = target_mode
+        self.used = False
+        self.warmup_timer = 0.65
+        self.e_was_pressed = True
         self.ring = Entity(parent=self, model='diamond', scale=(4.2, 5.2, 0.35), y=2.7, color=rgb(50, 150, 255), unlit=True)
         self.core = Entity(parent=self, model='sphere', scale=(3.2, 4.2, 0.25), y=2.7, color=rgb(130, 230, 255, 190), unlit=True)
         txt = '[E] Войти в Синий Портал -> Базар Между Временем' if target_mode == 'bazaar' else '[E] Покинуть Базар -> Следующий Этап'
@@ -63,16 +66,25 @@ class BluePortal(Entity):
 
     def update(self):
         game = ctx.game
-        if not game or not game.running or not is_valid(game.player) or self.is_empty():
+        if self.used or not game or not game.running or not is_valid(game.player) or self.is_empty():
             return
         self.ring.rotation_z += 75 * time.dt
+        if self.warmup_timer > 0:
+            self.warmup_timer -= time.dt
+            self.e_was_pressed = bool(held_keys['e'])
+            return
+
         dist = distance(Vec3(*self.position), Vec3(*game.player.position))
         self.label.enabled = (dist < 11.0)
-        if dist < 5.2 and held_keys['e']:
+        e_down = bool(held_keys['e'])
+        if dist < 5.2 and e_down and not self.e_was_pressed:
+            self.used = True
             if self.target_mode == 'bazaar':
                 game.enter_bazaar()
             else:
                 game.next_stage()
+            return
+        self.e_was_pressed = e_down
 
 
 class LunarShopBud(Entity):

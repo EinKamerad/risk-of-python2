@@ -159,7 +159,7 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
 
         if is_valid(self.player):
             if special_mode == 'bazaar':
-                self.player.position = Vec3(0, 1, -18)
+                self.player.position = Vec3(0, 1, -2)
             elif special_mode == 'moon':
                 self.player.position = Vec3(0, 1, -16)
             else:
