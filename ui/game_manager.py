@@ -299,10 +299,24 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         self.banner_text.color = col
         self.banner_timer = duration
 
-    def on_player_death(self):
+    def toggle_pause_menu(self):
+        if not self.running:
+            return
+        is_paused = not self.pause_panel.enabled
+        self.pause_panel.enabled = is_paused
+        mouse.locked = not is_paused
+
+    def resume_game(self):
+        if not self.running:
+            return
+        self.pause_panel.enabled = False
+        mouse.locked = True
+
+    def quit_run_to_menu(self, to_lobby=False):
         self.running = False
         mouse.locked = False
         self.tab_panel.enabled = False
+        self.pause_panel.enabled = False
         if is_valid(self.player):
             destroy(self.player)
         self.player = None
@@ -328,8 +342,16 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         for pinfo in self.lobby_players.values():
             pinfo['ready'] = False
 
-        self.show_screen('lobby')
-        self.broadcast_lobby_state()
+        if to_lobby:
+            self.show_screen('lobby')
+            self.broadcast_lobby_state()
+        else:
+            self.net.stop_session()
+            self.lobby_players.clear()
+            self.show_screen('main')
+
+    def on_player_death(self):
+        self.quit_run_to_menu(to_lobby=True)
         self.show_banner('ВЫ ПОГИБЛИ! ПОДГОТОВЬТЕСЬ К НОВОМУ ЗАБЕГУ В ЛОББИ', color.red, 4.5)
 
     def update(self):
@@ -418,6 +440,24 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
                     sy = self.get_surface_height(sx, sz, p_pos.y)
                     new_enemy = Enemy(Vec3(sx, sy, sz), enemy_type, coeff)
                     self.enemies.append(new_enemy)
+                    if self.net.connected and self.net.mode == 'host':
+                        self.net.broadcast({
+                            'type': 'enemy_spawn',
+                            'net_id': new_enemy.net_id,
+                            'enemy_type': enemy_type,
+                            'pos': [round(sx, 2), round(sy, 2), round(sz, 2)],
+                            'coeff': round(coeff, 2)
+                        })
+
+        if self.net.connected and self.net.mode == 'host':
+            self._enemy_net_timer = getattr(self, '_enemy_net_timer', 0.0) - time.dt
+            if self._enemy_net_timer <= 0:
+                self._enemy_net_timer = 0.22
+                pack = [
+                    [e.net_id, round(e.x, 2), round(e.y, 2), round(e.z, 2), round(e.hp, 1), e.enemy_type, round(e.coeff, 2), bool(e.is_ally)]
+                    for e in self.enemies if is_valid(e)
+                ]
+                self.net.broadcast({'type': 'enemies_sync', 'enemies': pack})
 
         p = self.player
         if p.items.get('transcendence', 0) > 0:

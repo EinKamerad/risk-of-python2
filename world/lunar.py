@@ -287,7 +287,7 @@ class MoonPillar(Entity):
                 self.core.color = color.lime
                 self.beacon.color = color.lime
                 self.label.color = color.lime
-                self.label.text = f'{self.title} ЗАРЯЖЕН ✓'
+                self.label.text = f'{self.title} ЗАРЯЖЕН '
                 LightningBeam(my_pos + Vec3(0, 4.5, 0), Vec3(0, COLOSSEUM_Y, 0), color.cyan, 0.65)
                 game.on_moon_pillar_charged()
 

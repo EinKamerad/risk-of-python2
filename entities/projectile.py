@@ -242,14 +242,18 @@ class Projectile(Entity):
                         al_center = Vec3(*al.position) + Vec3(0, getattr(al, 'hit_height', 1.2), 0)
                         if distance(my_pos, al_center) <= getattr(al, 'hit_radius', 1.1) + 0.5:
                             self.hit_memory.add(al)
-                            al.hp = min(float(al.max_hp), al.hp + self.heal_allies)
-                            if hasattr(al, 'hp_bar') and not al.hp_bar.is_empty():
-                                al.hp_bar.scale_x = clamp(al.hp / max(1.0, al.max_hp), 0.0, 1.0)
-                            if hasattr(al, 'hp_fill') and not al.hp_fill.is_empty():
-                                al.hp_fill.scale_x = clamp(al.hp / max(1.0, al.max_hp), 0.0, 1.0)
+                            if not self.is_remote:
+                                if hasattr(al, 'heal_ally'):
+                                    al.heal_ally(amount=self.heal_allies)
+                                else:
+                                    al.hp = min(float(al.max_hp), al.hp + self.heal_allies)
+                                    if hasattr(al, 'hp_bar') and not al.hp_bar.is_empty():
+                                        al.hp_bar.scale_x = clamp(al.hp / max(1.0, al.max_hp), 0.0, 1.0)
+                                    if hasattr(al, 'hp_fill') and not al.hp_fill.is_empty():
+                                        al.hp_fill.scale_x = clamp(al.hp / max(1.0, al.max_hp), 0.0, 1.0)
+                                if is_valid(game.player):
+                                    game.player.heal_amount(self.heal_allies * 0.25)
                             VisualFX(al_center, color.lime, 2.2, 0.25)
-                            if is_valid(game.player):
-                                game.player.heal_amount(self.heal_allies * 0.25)
                             self.safe_destroy()
                             return
 

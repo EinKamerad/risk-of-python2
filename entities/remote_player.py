@@ -1,7 +1,9 @@
 from ursina import *
 import math
-from config import SURVIVOR_CLASSES
+from config import ctx, SURVIVOR_CLASSES
 from models.survivors import build_survivor_mesh
+from entities.fx import VisualFX
+
 
 class RemotePlayer(Entity):
     def __init__(self, player_id, char_key='commando'):
@@ -13,6 +15,8 @@ class RemotePlayer(Entity):
         self.is_moving = False
         self.hp = 110.0
         self.max_hp = 110.0
+        self.hit_height = 1.2
+        self.hit_radius = 1.1
 
         self.parts = build_survivor_mesh(self, char_key)
         self.label = Text(
@@ -27,6 +31,26 @@ class RemotePlayer(Entity):
         self.hp_bg = Entity(parent=self, model='quad', scale=(1.2, 0.12), y=2.5, color=color.black, billboard=True)
         self.hp_fill = Entity(parent=self.hp_bg, model='quad', scale=(1, 1), z=-0.01, color=color.green, unlit=True)
 
+    def heal_ally(self, amount=0.0, shield_amt=0.0, uber_dur=0.0):
+        """Лечит и баффает сетевого союзника, отправляя пакет реальному игроку"""
+        if amount > 0:
+            self.hp = min(float(self.max_hp), self.hp + amount)
+            if not self.hp_fill.is_empty():
+                self.hp_fill.scale_x = clamp(self.hp / max(1.0, self.max_hp), 0.0, 1.0)
+        if getattr(ctx, 'net', None) and ctx.net.connected:
+            ctx.net.broadcast({
+                'type': 'ally_buff',
+                'target_id': self.player_id,
+                'heal': round(amount, 1),
+                'shield': round(shield_amt, 1),
+                'uber': round(uber_dur, 1)
+            })
+
+    def take_damage(self, amount):
+        """Визуальный отклик удара по сетевому игроку (урон рассчитывается на стороне самого игрока)"""
+        if not self.is_empty():
+            VisualFX(Vec3(*self.position) + Vec3(0, 1.1, 0), color.red, 1.5, 0.2)
+            
     def rebuild_class(self, new_char_key):
         if new_char_key == self.char_key or new_char_key not in SURVIVOR_CLASSES:
             return

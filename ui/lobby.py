@@ -116,12 +116,12 @@ class LobbyMixin:
             self.lobby_room_info.color = color.lime
 
             lines = []
-            my_rdy_str = "ГОТОВ ✓" if self.my_ready else "НЕ ГОТОВ"
+            my_rdy_str = "ГОТОВ " if self.my_ready else "НЕ ГОТОВ"
             lines.append(f"• ВЫ [{self.net.my_id.upper()}]: {SURVIVOR_CLASSES[self.selected_char]['name']} — [{my_rdy_str}]")
             for pid, info in sorted(self.lobby_players.items()):
                 ck = info.get('char_key', 'commando')
                 cname = SURVIVOR_CLASSES.get(ck, SURVIVOR_CLASSES['commando'])['name']
-                r_str = "ГОТОВ ✓" if info.get('ready') else "НЕ ГОТОВ"
+                r_str = "ГОТОВ " if info.get('ready') else "НЕ ГОТОВ"
                 lines.append(f"• ИГРОК [{pid.upper()}]: {cname} — [{r_str}]")
             self.lobby_players_list.text = '\n'.join(lines)
 
@@ -140,7 +140,7 @@ class LobbyMixin:
                 self.lobby_timer_text.color = rgb(180, 200, 230)
 
             if self.my_ready:
-                self.btn_lobby_ready.text = "ВЫ ГОТОВЫ ✓ (ГОЛОС ПРИНЯТ)"
+                self.btn_lobby_ready.text = "ВЫ ГОТОВЫ  (ГОЛОС ПРИНЯТ)"
                 self.btn_lobby_ready.color = rgb(55, 85, 65)
                 self.btn_lobby_ready.highlight_color = rgb(55, 85, 65)
             else:

@@ -432,7 +432,10 @@ class SurvivorSkillsMixin:
             )
             for al in allies:
                 if is_valid(al) and distance(my_pos, Vec3(*al.position)) <= 24.0:
-                    al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.40)
+                    if hasattr(al, 'heal_ally'):
+                        al.heal_ally(amount=al.max_hp * 0.40, shield_amt=20.0)
+                    else:
+                        al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.40)
                     LightningBeam(my_pos, Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 0.24)
                     VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 2.5, 0.25)
 
@@ -596,9 +599,18 @@ class SurvivorSkillsMixin:
             )
             self.heal_amount(self.max_hp * 0.25)
             VisualFX(my_pos + Vec3(0, 1.0, 0), color.lime, 8.0, 0.35)
-            for al in list(self.dummy_clones) + list(self.mindustry_turrets) + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]:
+            shift_allies = (
+                list(self.dummy_clones)
+                + list(self.mindustry_turrets)
+                + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]
+                + list(game.remote_players.values())
+            )
+            for al in shift_allies:
                 if is_valid(al) and distance(my_pos, Vec3(*al.position)) <= 15.0:
-                    al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.25)
+                    if hasattr(al, 'heal_ally'):
+                        al.heal_ally(amount=al.max_hp * 0.25)
+                    else:
+                        al.hp = min(float(al.max_hp), al.hp + al.max_hp * 0.25)
                     VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), color.lime, 2.5, 0.25)
         elif self.char_key == 'aigis':
             # Orgia Mode Overdrive: реактивный взлёт и перегрузка Orgia на 5.5 сек
@@ -811,9 +823,12 @@ class SurvivorSkillsMixin:
             )
             for al in allies:
                 if is_valid(al):
-                    al.hp = float(al.max_hp)
-                    if hasattr(al, 'damage'):
-                        al.damage *= 1.30
+                    if hasattr(al, 'heal_ally'):
+                        al.heal_ally(amount=al.max_hp, shield_amt=50.0, uber_dur=6.5)
+                    else:
+                        al.hp = float(al.max_hp)
+                        if hasattr(al, 'damage'):
+                            al.damage *= 1.30
                     LightningBeam(eye_pos, Vec3(*al.position) + Vec3(0, 1.2, 0), rgb(255, 55, 80), 0.35)
                     VisualFX(Vec3(*al.position) + Vec3(0, 1.2, 0), rgb(255, 55, 80), 3.5, 0.35)
 

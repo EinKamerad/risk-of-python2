@@ -120,13 +120,66 @@ class NetHandlerMixin:
 
             elif mtype == 'enemy_spawn':
                 if self.running and self.net.mode == 'client':
-                    etype = msg['enemy_type']
-                    pos = Vec3(*msg['pos'])
-                    if etype in BOSS_TYPES:
-                        self.spawn_boss(pos, boss_type=etype, net_id=msg['net_id'], from_network=True)
-                    else:
-                        e = Enemy(pos, etype, msg.get('coeff', self.difficulty_coeff), net_id=msg['net_id'])
-                        self.enemies.append(e)
+                    nid = msg.get('net_id')
+                    if not any(is_valid(e) and e.net_id == nid for e in self.enemies):
+                        etype = msg['enemy_type']
+                        pos = Vec3(*msg['pos'])
+                        if etype in BOSS_TYPES or etype == 'mithrix':
+                            self.spawn_boss(pos, boss_type=etype, net_id=nid, from_network=True)
+                        else:
+                            e = Enemy(pos, etype, msg.get('coeff', self.difficulty_coeff), net_id=nid)
+                            self.enemies.append(e)
+
+            elif mtype == 'enemies_sync':
+                if self.running and self.net.mode == 'client':
+                    by_id = {e.net_id: e for e in self.enemies if is_valid(e)}
+                    for item in msg.get('enemies', []):
+                        nid, ex, ey, ez, ehp, etype, ecoeff, is_al = item
+                        if nid in by_id:
+                            ent = by_id[nid]
+                            t_pos = Vec3(ex, ey, ez)
+                            if distance(Vec3(*ent.position), t_pos) > 6.0:
+                                ent.position = t_pos
+                            else:
+                                ent.position = lerp(ent.position, t_pos, 0.45)
+                            if ehp < ent.hp:
+                                ent.hp = ehp
+                                if not ent.hp_bar.is_empty():
+                                    ent.hp_bar.scale_x = max(0.0, ent.hp / max(1.0, ent.max_hp))
+                            if is_al and not ent.is_ally:
+                                ent.convert_to_ally(from_network=True)
+                        else:
+                            pos = Vec3(ex, ey, ez)
+                            if etype in BOSS_TYPES or etype == 'mithrix':
+                                self.spawn_boss(pos, boss_type=etype, net_id=nid, from_network=True)
+                            else:
+                                new_e = Enemy(pos, etype, ecoeff, net_id=nid)
+                                if is_al:
+                                    new_e.convert_to_ally(from_network=True)
+                                self.enemies.append(new_e)
+
+            elif mtype == 'enemy_convert':
+                if self.running:
+                    nid = msg.get('net_id')
+                    for e in list(self.enemies):
+                        if is_valid(e) and e.net_id == nid:
+                            e.convert_to_ally(from_network=True)
+                            break
+
+            elif mtype == 'ally_buff':
+                if self.running and is_valid(self.player):
+                    tid = msg.get('target_id')
+                    if tid in (self.net.my_id, 'all'):
+                        heal_v = float(msg.get('heal', 0.0))
+                        sh_v = float(msg.get('shield', 0.0))
+                        uber_v = float(msg.get('uber', 0.0))
+                        if heal_v > 0:
+                            self.player.heal_amount(heal_v)
+                        if sh_v > 0:
+                            self.player.shield = min(float(self.player.max_hp), self.player.shield + sh_v)
+                        if uber_v > 0:
+                            self.player.uber_timer = max(self.player.uber_timer, uber_v)
+                            self.show_banner('МЕДИК АКТИВИРОВАЛ НА ВАС УБЕР-ЗАРЯД (НЕУЯЗВИМОСТЬ)!', rgb(255, 75, 90), 3.0)
 
             elif mtype == 'enemy_damage':
                 if self.running:

@@ -34,6 +34,7 @@ SETTINGS = {
     'sensitivity': 45,
     'fog_density': 0.006,
     'fullscreen': False,
+    'monitor': 0,
     'coop_bot': True
 }
 

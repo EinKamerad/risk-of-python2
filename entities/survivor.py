@@ -296,9 +296,13 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.heal_amount(self.max_hp * pct_heal + 2.0 * bungus_stacks)
                 my_p = Vec3(*self.position)
                 VisualFX(my_p + Vec3(0, 0.5, 0), rgb(95, 255, 125), 2.2, 0.22)
-                for al in list(self.dummy_clones) + list(self.mindustry_turrets) + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)]:
+                for al in list(self.dummy_clones) + list(self.mindustry_turrets) + [e for e in game.enemies if is_valid(e) and getattr(e, 'is_ally', False)] + list(game.remote_players.values()):
                     if is_valid(al) and distance_2d(my_p, Vec3(*al.position)) <= b_rad:
-                        al.hp = min(float(al.max_hp), al.hp + al.max_hp * pct_heal + 3.0 * bungus_stacks)
+                        heal_val = al.max_hp * pct_heal + 3.0 * bungus_stacks
+                        if hasattr(al, 'heal_ally'):
+                            al.heal_ally(amount=heal_val)
+                        else:
+                            al.hp = min(float(al.max_hp), al.hp + heal_val)
         else:
             self.bungus_ring.enabled = False
 

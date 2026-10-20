@@ -133,14 +133,21 @@ class SetupScreensMixin:
 
         self.btn_fullscreen = Button(
             text='ПОЛНЫЙ ЭКРАН: ВЫКЛ',
-            parent=self.settings_panel, scale=(0.48, 0.065), position=(-0.42, -0.17), z=-0.01,
+            parent=self.settings_panel, scale=(0.48, 0.058), position=(-0.42, -0.155), z=-0.01,
             color=rgb(45, 65, 95), highlight_color=rgb(65, 95, 135)
         )
         self.btn_fullscreen.on_click = lambda: self.change_setting('fullscreen', 0)
 
+        self.btn_monitor = Button(
+            text='МОНИТОР: #1',
+            parent=self.settings_panel, scale=(0.48, 0.058), position=(-0.42, -0.225), z=-0.01,
+            color=rgb(45, 80, 95), highlight_color=rgb(65, 115, 135)
+        )
+        self.btn_monitor.on_click = lambda: self.change_setting('monitor', 1)
+
         btn_set_back = Button(
             text='<- НАЗАД В ГЛАВНОЕ МЕНЮ',
-            parent=self.settings_panel, scale=(0.46, 0.065), position=(-0.42, -0.27), z=-0.01,
+            parent=self.settings_panel, scale=(0.46, 0.058), position=(-0.42, -0.30), z=-0.01,
             color=rgb(60, 65, 82), highlight_color=rgb(85, 92, 115)
         )
         btn_set_back.on_click = lambda: self.show_screen('main')
@@ -469,6 +476,33 @@ class SetupScreensMixin:
         Entity(parent=self.tab_panel, model='quad', scale=(1.15, 0.68), position=(0, 0), z=0.01, color=rgb(12, 16, 26, 242))
         self.tab_text = Text(text='', parent=self.tab_panel, position=(-0.53, 0.29), z=-0.02, scale=0.78, color=color.white)
 
+        # Меню паузы по клавише [ESC] во время забега
+        self.pause_panel = Entity(parent=self.hud_panel, enabled=False)
+        Entity(parent=self.pause_panel, model='quad', scale=(0.56, 0.44), position=(0, 0), z=0.01, color=rgb(12, 16, 28, 245))
+        Entity(parent=self.pause_panel, model='quad', scale=(0.56, 0.006), position=(0, 0.22), z=-0.01, color=color.cyan)
+        Text(text='ПАУЗА', parent=self.pause_panel, position=(0, 0.16), z=-0.02, origin=(0, 0), scale=1.35, color=color.cyan)
+
+        btn_resume = Button(
+            text='ПРОДОЛЖИТЬ ИГРУ [ESC]', parent=self.pause_panel,
+            scale=(0.44, 0.07), position=(0, 0.05), z=-0.01,
+            color=rgb(38, 110, 70), highlight_color=rgb(55, 155, 95)
+        )
+        btn_resume.on_click = self.resume_game
+
+        btn_to_lobby = Button(
+            text='ВЫЙТИ В ЛОББИ ПЕРСОНАЖЕЙ', parent=self.pause_panel,
+            scale=(0.44, 0.07), position=(0, -0.045), z=-0.01,
+            color=rgb(55, 75, 115), highlight_color=rgb(80, 105, 155)
+        )
+        btn_to_lobby.on_click = lambda: self.quit_run_to_menu(to_lobby=True)
+
+        btn_to_main = Button(
+            text='ВЫЙТИ В ГЛАВНОЕ МЕНЮ', parent=self.pause_panel,
+            scale=(0.44, 0.07), position=(0, -0.14), z=-0.01,
+            color=rgb(135, 40, 48), highlight_color=rgb(185, 60, 68)
+        )
+        btn_to_main.on_click = lambda: self.quit_run_to_menu(to_lobby=False)
+
         # Баннер уведомлений
         self.banner_text = Text(text='', parent=camera.ui, position=(0, 0.19), z=-0.04, origin=(0, 0), scale=1.15, color=color.yellow)
         self.banner_timer = 0.0
@@ -671,6 +705,8 @@ class SetupScreensMixin:
         self.lobby_panel.enabled = (screen_name == 'lobby')
         self.logbook_panel.enabled = (screen_name == 'logbook')
         self.hud_panel.enabled = (screen_name == 'in_game')
+        if hasattr(self, 'pause_panel'):
+            self.pause_panel.enabled = False
         self.diorama_root.enabled = (screen_name != 'in_game')
 
         if screen_name != 'in_game':
@@ -685,6 +721,35 @@ class SetupScreensMixin:
             if screen_name == 'lobby':
                 self.update_lobby_ui()
 
+    def _get_monitors_list(self):
+        mons = getattr(window, 'monitors', None)
+        if mons:
+            return list(mons)
+        try:
+            from screeninfo import get_monitors
+            return list(get_monitors())
+        except Exception:
+            return []
+
+    def _apply_monitor(self, mon_idx):
+        mons = self._get_monitors_list()
+        if not mons:
+            return
+        idx = mon_idx % len(mons)
+        m = mons[idx]
+        mx = getattr(m, 'x', 0)
+        my = getattr(m, 'y', 0)
+        mw = getattr(m, 'width', 1920)
+        mh = getattr(m, 'height', 1080)
+        if self.settings.get('fullscreen'):
+            window.position = Vec2(int(mx), int(my))
+        else:
+            win_w = int(window.size[0]) if window.size[0] else 1536
+            win_h = int(window.size[1]) if window.size[1] else 864
+            cx = int(mx + max(0, (mw - win_w) // 2))
+            cy = int(my + max(0, (mh - win_h) // 2))
+            window.position = Vec2(cx, cy)
+
     def change_setting(self, key, delta):
         if key == 'sensitivity':
             self.settings['sensitivity'] = clamp(self.settings['sensitivity'] + delta, 10, 120)
@@ -697,6 +762,12 @@ class SetupScreensMixin:
         elif key == 'fullscreen':
             self.settings['fullscreen'] = not self.settings['fullscreen']
             window.fullscreen = self.settings['fullscreen']
+            self._apply_monitor(self.settings.get('monitor', 0))
+        elif key == 'monitor':
+            mons = self._get_monitors_list()
+            count = max(1, len(mons))
+            self.settings['monitor'] = (self.settings.get('monitor', 0) + int(delta)) % count
+            self._apply_monitor(self.settings['monitor'])
         self.refresh_settings_labels()
 
     def refresh_settings_labels(self):
@@ -705,3 +776,11 @@ class SetupScreensMixin:
         self.lbl_fog.text = f"Плотность тумана: {self.settings['fog_density']:.3f}"
         fs_txt = "ВКЛ" if self.settings['fullscreen'] else "ВЫКЛ"
         self.btn_fullscreen.text = f"ПОЛНЫЙ ЭКРАН: {fs_txt}"
+        if hasattr(self, 'btn_monitor'):
+            mons = self._get_monitors_list()
+            idx = self.settings.get('monitor', 0)
+            if mons and idx < len(mons):
+                m = mons[idx]
+                self.btn_monitor.text = f"МОНИТОР: #{idx + 1}/{len(mons)} ({getattr(m, 'width', 1920)}x{getattr(m, 'height', 1080)})"
+            else:
+                self.btn_monitor.text = "МОНИТОР: #1 (Основной)"

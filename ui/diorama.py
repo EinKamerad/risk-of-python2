@@ -220,7 +220,7 @@ class DioramaMixin:
                     slot['parts'] = build_survivor_mesh(slot['actor'], ckey)
                     slot['char_key'] = ckey
 
-                rdy_str = "ГОТОВ ✓" if is_rdy else "ВЫБИРАЕТ..."
+                rdy_str = "ГОТОВ " if is_rdy else "ВЫБИРАЕТ..."
                 slot['label'].text = f"[{pid.upper()}] {SURVIVOR_CLASSES[ckey]['name']}\n[{rdy_str}]"
                 slot['label'].color = color.lime if is_rdy else color.yellow
                 slot['ring'].color = color.lime if is_rdy else rgb(80, 180, 255)

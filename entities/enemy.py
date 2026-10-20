@@ -90,8 +90,10 @@ class Enemy(Entity, BossAIMixin):
         self.hp_bar_bg = Entity(parent=self, model='quad', scale=(bar_w, 0.15), y=bar_y, color=color.black, billboard=True)
         self.hp_bar = Entity(parent=self.hp_bar_bg, model='quad', scale=(1, 1), z=-0.01, color=color.cyan if enemy_type == 'mithrix' else color.red, unlit=True)
 
-    def convert_to_ally(self):
+    def convert_to_ally(self, from_network=False):
         """Ульта Медика TF2: переманивает монстра или босса на сторону выживших!"""
+        if self.is_ally:
+            return
         game = ctx.game
         self.is_ally = True
         self.hp = float(self.max_hp)
@@ -108,13 +110,14 @@ class Enemy(Entity, BossAIMixin):
             y=0.1, color=color.lime, unlit=True
         )
         self.ally_label = Text(
-            text='[СОЮЗНИК МЕДИКА ✓]', parent=self,
+            text='[СОЮЗНИК МЕДИКА]', parent=self,
             y=self.hp_bar_bg.y + 0.45, scale=9.5, origin=(0, 0),
             color=color.lime, billboard=True
         )
-        # Если переманили Босса Телепорта — телепорт считает босса побеждённым!
         if game and game.active_boss is self:
             game.active_boss = None
+        if not from_network and getattr(ctx, 'net', None) and ctx.net.connected:
+            ctx.net.broadcast({'type': 'enemy_convert', 'net_id': self.net_id})
 
     def _get_nearest_target(self, game):
         my_pos = Vec3(*self.position)
@@ -141,7 +144,7 @@ class Enemy(Entity, BossAIMixin):
             candidates.append((distance_2d(my_pos, Vec3(*game.player.position)), Vec3(*game.player.position), game.player))
         for rp in game.remote_players.values():
             if is_valid(rp):
-                candidates.append((distance_2d(my_pos, Vec3(*rp.position)), Vec3(*rp.position), None))
+                candidates.append((distance_2d(my_pos, Vec3(*rp.position)), Vec3(*rp.position), rp))
         for other in game.enemies:
             if other is not self and is_valid(other) and getattr(other, 'is_ally', False):
                 candidates.append((distance_2d(my_pos, Vec3(*other.position)), Vec3(*other.position), other))

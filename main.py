@@ -50,8 +50,11 @@ def input(key):
                 ctx.game.adjust_preview_zoom(0.12)
             elif key == 'scroll down':
                 ctx.game.adjust_preview_zoom(-0.12)
-    elif key == 'escape':
-        mouse.locked = not mouse.locked
+    else:
+        if key == 'escape':
+            ctx.game.toggle_pause_menu()
+        elif ctx.game.player and hasattr(ctx.game.player, 'handle_combat_input'):
+            ctx.game.player.handle_combat_input(key)
 
 
 if __name__ == '__main__':
