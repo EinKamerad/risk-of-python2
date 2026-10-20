@@ -5,6 +5,7 @@ from config import ctx, rgb, is_valid, ITEM_POOL, SURVIVOR_CLASSES
 from models.survivors import build_survivor_mesh
 from entities.fx import VisualFX, LightningBeam
 from entities.survivor_skills import SurvivorSkillsMixin
+from world.lunar import COLOSSEUM_Y
 
 
 def distance_2d(a, b):
