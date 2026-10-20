@@ -342,9 +342,7 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
 
         if not self.running:
             t = time.time()
-            self.local_preview_actor.rotation_y += 22 * time.dt
-            if self.local_preview_parts and self.local_preview_parts.get('halo'):
-                self.local_preview_parts['halo'].rotation_z += 90 * time.dt
+            self.update_diorama_inspection()
 
             for slot in self.remote_pedestals:
                 if slot['pedestal'].enabled:

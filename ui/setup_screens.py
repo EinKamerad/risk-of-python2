@@ -1,5 +1,10 @@
 from ursina import *
-from config import rgb, is_valid, clear_children, ITEM_POOL
+import textwrap
+from config import (
+    rgb, is_valid, clear_children, ITEM_POOL, SURVIVOR_CLASSES,
+    MONSTER_LOG, BOSS_TYPES, STAGE_PALETTES, ACHIEVEMENTS, PROGRESS
+)
+from data.stages import SPECIAL_PALETTES
 
 
 class SetupScreensMixin:
@@ -27,15 +32,16 @@ class SetupScreensMixin:
         )
 
         menu_Actions = [
-            ('ОДИНОЧНАЯ ИГРА', 0.09, rgb(38, 105, 70), rgb(55, 150, 95), self.open_singleplayer_lobby),
-            ('СЕТЕВАЯ ИГРА (CO-OP)', -0.02, rgb(40, 85, 145), rgb(60, 125, 205), lambda: self.show_screen('mp_connect')),
-            ('НАСТРОЙКИ', -0.13, rgb(65, 72, 95), rgb(95, 105, 135), lambda: self.show_screen('settings')),
-            ('ВЫХОД ИЗ ИГРЫ', -0.24, rgb(135, 40, 45), rgb(185, 60, 65), application.quit),
+            ('ОДИНОЧНАЯ ИГРА', 0.11, rgb(38, 105, 70), rgb(55, 150, 95), self.open_singleplayer_lobby),
+            ('СЕТЕВАЯ ИГРА (CO-OP)', 0.02, rgb(40, 85, 145), rgb(60, 125, 205), lambda: self.show_screen('mp_connect')),
+            ('ЖУРНАЛ (LOGBOOK)', -0.07, rgb(125, 75, 165), rgb(165, 105, 215), self.open_logbook),
+            ('НАСТРОЙКИ', -0.16, rgb(65, 72, 95), rgb(95, 105, 135), lambda: self.show_screen('settings')),
+            ('ВЫХОД ИЗ ИГРЫ', -0.25, rgb(135, 40, 45), rgb(185, 60, 65), application.quit),
         ]
         for label, by, col, hcol, action in menu_Actions:
             btn = Button(
                 text=label, parent=self.main_menu_panel,
-                scale=(0.50, 0.08), position=(-0.46, by), z=-0.01,
+                scale=(0.50, 0.072), position=(-0.46, by), z=-0.01,
                 color=col, highlight_color=hcol
             )
             btn.on_click = action
@@ -252,6 +258,122 @@ class SetupScreensMixin:
         )
         self.btn_lobby_leave.on_click = self.leave_lobby_to_main
 
+        Text(
+            text='[3D-ОСМОТР: Зажмите ЛКМ/ПКМ и двигайте мышь | Колёсико — Зум | Q/E — Поворот]',
+            parent=self.lobby_panel, position=(0.38, -0.19), z=-0.02,
+            origin=(0, 0), scale=0.66, color=rgb(155, 215, 255)
+        )
+
+        # ------------------------------------------
+        # 4.5. ЖУРНАЛ ВЫЖИВШЕГО (LOGBOOK)
+        # ------------------------------------------
+        self.logbook_panel = Entity(parent=camera.ui, enabled=False)
+        self.logbook_category = 'items'
+        self.logbook_page = 0
+        self.logbook_selected_key = 'syringe'
+
+        # Вкладки категорий сверху
+        self.logbook_tab_buttons = {}
+        log_tabs = [
+            ('items', 'АРТЕФАКТЫ', -0.68),
+            ('survivors', 'ПЕРСОНАЖИ', -0.44),
+            ('monsters', 'ВРАГИ', -0.20),
+            ('bosses', 'БОССЫ', 0.04),
+            ('stages', 'ЛОКАЦИИ', 0.28),
+            ('achievements', 'ДОСТИЖЕНИЯ', 0.52),
+        ]
+        for cat_id, cat_title, tx in log_tabs:
+            tbtn = Button(
+                text=cat_title, parent=self.logbook_panel,
+                scale=(0.22, 0.052), position=(tx, 0.335), z=-0.01,
+                color=rgb(32, 40, 62), highlight_color=rgb(65, 95, 145)
+            )
+            tbtn.on_click = lambda c=cat_id: self.switch_logbook_category(c)
+            self.logbook_tab_buttons[cat_id] = tbtn
+
+        # Левая панель сетки записей и описания
+        Entity(
+            parent=self.logbook_panel, model='quad',
+            scale=(0.82, 0.72), position=(-0.45, -0.065), z=0.02,
+            color=rgb(12, 16, 28, 240)
+        )
+        self.logbook_stats_header = Text(
+            text='', parent=self.logbook_panel, position=(-0.83, 0.275),
+            z=-0.02, scale=0.72, color=color.gold
+        )
+
+        self.logbook_grid_root = Entity(parent=self.logbook_panel)
+
+        self.btn_log_prev = Button(
+            text='<- ПРЕД.', parent=self.logbook_panel,
+            scale=(0.16, 0.042), position=(-0.65, -0.115), z=-0.01,
+            color=rgb(40, 52, 78), highlight_color=rgb(65, 85, 120)
+        )
+        self.btn_log_prev.on_click = lambda: self.change_logbook_page(-1)
+
+        self.logbook_page_text = Text(
+            text='Стр. 1/1', parent=self.logbook_panel,
+            position=(-0.45, -0.115), z=-0.02, origin=(0, 0), scale=0.72, color=color.white
+        )
+
+        self.btn_log_next = Button(
+            text='СЛЕД. ->', parent=self.logbook_panel,
+            scale=(0.16, 0.042), position=(-0.25, -0.115), z=-0.01,
+            color=rgb(40, 52, 78), highlight_color=rgb(65, 85, 120)
+        )
+        self.btn_log_next.on_click = lambda: self.change_logbook_page(1)
+
+        # Карточка подробного описания выбранного объекта
+        Entity(
+            parent=self.logbook_panel, model='quad',
+            scale=(0.78, 0.24), position=(-0.45, -0.28), z=0.01,
+            color=rgb(18, 24, 40, 245)
+        )
+        self.logbook_detail_line = Entity(
+            parent=self.logbook_panel, model='quad',
+            scale=(0.78, 0.005), position=(-0.45, -0.16), z=-0.01,
+            color=color.cyan
+        )
+        self.logbook_entry_title = Text(
+            text='', parent=self.logbook_panel, position=(-0.82, -0.18),
+            z=-0.02, scale=1.02, color=color.cyan
+        )
+        self.logbook_entry_sub = Text(
+            text='', parent=self.logbook_panel, position=(-0.82, -0.22),
+            z=-0.02, scale=0.75, color=color.gold
+        )
+        self.logbook_entry_desc = Text(
+            text='', parent=self.logbook_panel, position=(-0.82, -0.26),
+            z=-0.02, scale=0.74, color=color.white
+        )
+
+        # Правая панель управления 3D-осмотром
+        Text(
+            text='[Зажмите ЛКМ/ПКМ и двигайте мышь для осмотра со всех сторон | Колёсико — Зум]',
+            parent=self.logbook_panel, position=(0.38, -0.27), z=-0.02,
+            origin=(0, 0), scale=0.66, color=rgb(155, 215, 255)
+        )
+        btn_reset_view = Button(
+            text='СБРОСИТЬ РАКУРС', parent=self.logbook_panel,
+            scale=(0.24, 0.05), position=(0.24, -0.34), z=-0.01,
+            color=rgb(42, 62, 92), highlight_color=rgb(65, 95, 140)
+        )
+        btn_reset_view.on_click = self.reset_preview_orientation
+
+        btn_unlock_all = Button(
+            text='ОТКРЫТЬ ВСЁ В ЖУРНАЛЕ', parent=self.logbook_panel,
+            scale=(0.28, 0.05), position=(0.54, -0.34), z=-0.01,
+            color=rgb(95, 65, 30), highlight_color=rgb(140, 95, 45)
+        )
+        btn_unlock_all.on_click = self.action_unlock_all_logbook
+
+        btn_log_back = Button(
+            text='<- НАЗАД В ГЛАВНОЕ МЕНЮ', parent=self.logbook_panel,
+            scale=(0.44, 0.06), position=(0.38, -0.42), z=-0.01,
+            color=rgb(60, 65, 82), highlight_color=rgb(85, 92, 115)
+        )
+        btn_log_back.on_click = lambda: self.show_screen('main')
+
         # ------------------------------------------
         # 5. БОЕВОЙ ИНТЕРФЕЙС (HUD С ДИНАМИЧЕСКИМ ИНВЕНТАРЁМ)
         # ------------------------------------------
@@ -399,6 +521,146 @@ class SetupScreensMixin:
                 scale=0.68, color=color.white
             )
 
+    def open_logbook(self):
+        self.show_screen('logbook')
+        self.switch_logbook_category(self.logbook_category)
+
+    def action_unlock_all_logbook(self):
+        PROGRESS.unlock_all()
+        self.switch_logbook_category(self.logbook_category)
+        self.show_banner('ВСЕ ЗАПИСИ ЖУРНАЛА ОТКРЫТЫ!', color.gold, 2.5)
+
+    def _get_logbook_entries(self, category):
+        if category == 'items':
+            return [(k, v['short'], v['color'], k in PROGRESS.unlocked_items) for k, v in ITEM_POOL.items()]
+        elif category == 'survivors':
+            return [(k, v['icon'], v['body_color'], True) for k, v in SURVIVOR_CLASSES.items()]
+        elif category == 'monsters':
+            reg_keys = [k for k in MONSTER_LOG.keys() if k not in BOSS_TYPES and k != 'mithrix']
+            return [(k, k[:5].upper(), rgb(255, 140, 60), True) for k in reg_keys]
+        elif category == 'bosses':
+            boss_keys = [k for k in MONSTER_LOG.keys() if k in BOSS_TYPES or k == 'mithrix']
+            return [(k, k[:5].upper(), color.cyan if k == 'mithrix' else color.red, True) for k in boss_keys]
+        elif category == 'stages':
+            all_st = list(STAGE_PALETTES) + [SPECIAL_PALETTES['bazaar'], SPECIAL_PALETTES['moon']]
+            return [(p['id'], p['id'][:5].upper(), p['accent'], p['id'] in PROGRESS.discovered_stages) for p in all_st]
+        elif category == 'achievements':
+            return [(k, 'ACH', color.gold, k in PROGRESS.unlocked_achievements) for k in ACHIEVEMENTS.keys()]
+        return []
+
+    def switch_logbook_category(self, category):
+        self.logbook_category = category
+        self.logbook_page = 0
+        for cid, btn in self.logbook_tab_buttons.items():
+            btn.color = rgb(75, 115, 185) if cid == category else rgb(32, 40, 62)
+
+        entries = self._get_logbook_entries(category)
+        if entries:
+            self.select_logbook_entry(entries[0][0])
+        self.refresh_logbook_grid()
+
+    def change_logbook_page(self, delta):
+        entries = self._get_logbook_entries(self.logbook_category)
+        per_page = 18
+        max_page = max(0, (len(entries) - 1) // per_page)
+        self.logbook_page = clamp(self.logbook_page + delta, 0, max_page)
+        self.refresh_logbook_grid()
+
+    def refresh_logbook_grid(self):
+        clear_children(self.logbook_grid_root)
+        entries = self._get_logbook_entries(self.logbook_category)
+        per_page = 18
+        total_pages = max(1, (len(entries) - 1) // per_page + 1)
+        self.logbook_page = clamp(self.logbook_page, 0, total_pages - 1)
+        self.logbook_page_text.text = f"Стр. {self.logbook_page + 1} / {total_pages}"
+
+        unlocked_cnt = sum(1 for _, _, _, u in entries if u)
+        self.logbook_stats_header.text = (
+            f"Открыто в разделе: {unlocked_cnt}/{len(entries)}   |   "
+            f"Всего убийств: {PROGRESS.kills}   |   Боссов повержено: {PROGRESS.boss_kills}"
+        )
+
+        page_slice = entries[self.logbook_page * per_page:(self.logbook_page + 1) * per_page]
+        for idx, (ekey, short_lbl, col, is_unlocked) in enumerate(page_slice):
+            r = idx // 6
+            c = idx % 6
+            bx = -0.765 + c * 0.125
+            by = 0.205 - r * 0.102
+            is_sel = (ekey == self.logbook_selected_key)
+
+            border_col = color.white if is_sel else (col if is_unlocked else rgb(60, 65, 80))
+            Entity(
+                parent=self.logbook_grid_root, model='quad',
+                scale=(0.114, 0.088) if is_sel else (0.108, 0.082),
+                position=(bx, by), z=0.01, color=border_col
+            )
+            btn = Button(
+                text='', parent=self.logbook_grid_root,
+                scale=(0.100, 0.074), position=(bx, by), z=-0.01,
+                color=rgb(24, 32, 48) if is_unlocked else rgb(16, 18, 26),
+                highlight_color=col
+            )
+            btn.on_click = lambda k=ekey: self.select_logbook_entry(k)
+            Text(
+                text=short_lbl if is_unlocked else '???',
+                parent=self.logbook_grid_root, position=(bx, by), z=-0.02,
+                origin=(0, 0), scale=0.66, color=col if is_unlocked else color.gray
+            )
+
+    def select_logbook_entry(self, entry_key):
+        self.logbook_selected_key = entry_key
+        cat = self.logbook_category
+        self.reset_preview_orientation()
+        self.build_logbook_preview(cat, entry_key)
+        self.refresh_logbook_grid()
+
+        if cat == 'items':
+            info = ITEM_POOL[entry_key]
+            self.logbook_detail_line.color = info['color']
+            self.logbook_entry_title.text = info['name']
+            self.logbook_entry_title.color = info['color']
+            self.logbook_entry_sub.text = f"Редкость: {info['tier_name']}   |   Код: [{info['short']}]"
+            self.logbook_entry_desc.text = textwrap.fill(info['desc'], width=58)
+
+        elif cat == 'survivors':
+            cfg = SURVIVOR_CLASSES[entry_key]
+            self.logbook_detail_line.color = cfg['body_color']
+            self.logbook_entry_title.text = f"{cfg['name']} — {cfg['subtitle']}"
+            self.logbook_entry_title.color = cfg['body_color']
+            self.logbook_entry_sub.text = f"HP: {cfg['hp']}  |  Скорость: {cfg['speed']}  |  Урон: {cfg['damage']}  |  Атака: {cfg['fire_rate']}/с"
+            sk_names = " / ".join(cfg['skills'][s]['name'] for s in ('m1', 'm2', 'shift', 'r'))
+            self.logbook_entry_desc.text = textwrap.fill(f"Навыки: {sk_names}", width=58)
+
+        elif cat in ('monsters', 'bosses'):
+            m = MONSTER_LOG[entry_key]
+            col = color.cyan if entry_key == 'mithrix' else (color.red if cat == 'bosses' else rgb(255, 145, 60))
+            self.logbook_detail_line.color = col
+            self.logbook_entry_title.text = m['name']
+            self.logbook_entry_title.color = col
+            self.logbook_entry_sub.text = f"Базовое HP: {m['hp']}   |   Базовый урон: {m['damage']}"
+            self.logbook_entry_desc.text = textwrap.fill(m['desc'], width=58)
+
+        elif cat == 'stages':
+            all_st = {p['id']: p for p in STAGE_PALETTES}
+            all_st.update(SPECIAL_PALETTES)
+            st = all_st[entry_key]
+            disc = entry_key in PROGRESS.discovered_stages
+            self.logbook_detail_line.color = st['accent']
+            self.logbook_entry_title.text = st['name']
+            self.logbook_entry_title.color = st['accent']
+            self.logbook_entry_sub.text = "Статус: ИССЛЕДОВАНА ✓" if disc else "Статус: ЕЩЁ НЕ ПОСЕЩЕНА"
+            self.logbook_entry_desc.text = textwrap.fill(st['desc'], width=58)
+
+        elif cat == 'achievements':
+            ach = ACHIEVEMENTS[entry_key]
+            unlocked = entry_key in PROGRESS.unlocked_achievements
+            col = color.lime if unlocked else color.orange
+            self.logbook_detail_line.color = col
+            self.logbook_entry_title.text = ach['name']
+            self.logbook_entry_title.color = col
+            self.logbook_entry_sub.text = "Статус: ВЫПОЛНЕНО ✓" if unlocked else "Статус: НЕ ВЫПОЛНЕНО"
+            self.logbook_entry_desc.text = textwrap.fill(f"{ach['desc']} ({ach['reward_text']})", width=58)
+
     def show_screen(self, screen_name):
         self.typing_code = False
         self.menu_state = screen_name
@@ -407,6 +669,7 @@ class SetupScreensMixin:
         self.mp_panel.enabled = (screen_name == 'mp_connect')
         self.settings_panel.enabled = (screen_name == 'settings')
         self.lobby_panel.enabled = (screen_name == 'lobby')
+        self.logbook_panel.enabled = (screen_name == 'logbook')
         self.hud_panel.enabled = (screen_name == 'in_game')
         self.diorama_root.enabled = (screen_name != 'in_game')
 
@@ -416,6 +679,9 @@ class SetupScreensMixin:
             scene.fog_color = rgb(18, 20, 32)
             self.reset_menu_camera()
             self.refresh_remote_lobby_models()
+            if screen_name in ('main', 'lobby'):
+                self.reset_preview_orientation()
+                self.rebuild_local_lobby_model()
             if screen_name == 'lobby':
                 self.update_lobby_ui()
 
