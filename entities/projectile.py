@@ -52,6 +52,16 @@ def apply_player_hit_effects(target, hit_pos, base_dmg, hit_color=color.yellow, 
         if it['predatory'] > 0:
             p.predatory_timer = 3.0
 
+    # ULTRAKILL V1: Множитель урона от ранга стиля и лечение свежей кровью вблизи (Blood is Fuel!)
+    if p.char_key == 'v1':
+        style_mult = getattr(p, 'v1_style_dmg_mult', 1.0)
+        dmg *= style_mult
+        dist_to_v1 = distance(Vec3(*p.position), target_pos)
+        if dist_to_v1 <= 11.0:
+            blood_heal = min(18.0, max(2.0, dmg * 0.18 * style_mult))
+            p.heal_amount(blood_heal)
+            VisualFX(target_pos + Vec3(0, 1.1, 0), color.red, 1.5, 0.16)
+
     # Leeching Seed + врождённый вампиризм навыка (с поддержкой Aegis)
     heal_amt = lifesteal + (1.5 * it['leeching_seed'])
     if heal_amt > 0:
@@ -213,10 +223,33 @@ class Projectile(Entity):
                 desired = ((Vec3(*nearest.position) + Vec3(0, nearest.hit_height, 0)) - my_pos).normalized()
                 self.direction = lerp(self.direction, desired, time.dt * 8.0).normalized()
 
+        # V1 Freezeframe: заморозка ракет в воздухе при активном ПКМ ракетницы
+        if getattr(self, 'is_v1_rocket', False) and is_valid(game.player) and getattr(game.player, 'v1_rockets_frozen', False):
+            self.rotation_z += 540 * time.dt
+            return
+
+        # V1 Core Eject / Granade: гравитация по дуге
+        if getattr(self, 'gravity_arc', 0.0) > 0:
+            self.direction.y -= self.gravity_arc * time.dt
+
+        # V1 Attractor Nailgun: притяжение гвоздей к активному магниту
+        if getattr(self, 'is_v1_nail', False) and is_valid(game.player):
+            for mag in getattr(game.player, 'v1_magnets', []):
+                if is_valid(mag):
+                    to_mag = (Vec3(*mag.position) + Vec3(0, 0.8, 0)) - my_pos
+                    if to_mag.length() <= 18.0:
+                        self.direction = lerp(self.direction, to_mag.normalized(), time.dt * 14.0).normalized()
+                        break
+
         self.position += self.direction * self.speed * time.dt
         self.rotation_z += 360 * time.dt
         self.lifetime -= time.dt
         if self.lifetime <= 0 or self.y < -1:
+            if getattr(self, 'is_v1_core', False) or getattr(self, 'is_v1_rocket', False):
+                VisualFX(my_pos, color.orange, self.aoe * 1.4 if self.aoe > 0 else 4.0, 0.3)
+                for e in list(game.enemies):
+                    if is_valid(e) and not getattr(e, 'is_ally', False) and distance(Vec3(*e.position), my_pos) <= max(3.5, self.aoe):
+                        apply_player_hit_effects(e, my_pos, self.damage, self.color, aoe=0, lifesteal=self.lifesteal)
             self.safe_destroy()
             return
 

@@ -285,6 +285,11 @@ class Enemy(Entity, BossAIMixin):
             p = game.player
             it = p.items
             p.gold += self.gold_reward
+            if p.char_key == 'v1' and hasattr(p, 'v1_add_style'):
+                if self.is_boss:
+                    p.v1_add_style('+ BIG KILL', color.red, 160)
+                else:
+                    p.v1_add_style('+ KILL', color.white, 45)
 
             if self.is_boss or random.random() < 0.08:
                 gain = 5 if self.enemy_type == 'mithrix' else (1 if not self.is_boss else 2)

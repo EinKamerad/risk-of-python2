@@ -479,17 +479,50 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         else:
             self.hp_text.text = f"{int(p.hp)} / {p.max_hp} HP"
 
-        cds = {'m1': p.m1_cd, 'm2': p.m2_cd, 'shift': p.shift_cd, 'r': p.r_cd}
-        for sk_key, (box, cd_lbl, col) in self.skill_boxes.items():
-            rem = cds[sk_key]
-            if rem <= 0:
-                cd_lbl.text = 'READY'
-                cd_lbl.color = col
+        if p.char_key == 'v1':
+            self.v1_style_hud.enabled = (p.v1_style_points > 0 or len(p.v1_style_log) > 0 or True)
+            rank_name, rank_col, style_mult = p.v1_get_style_rank_info()
+            self.v1_rank_title.text = f"{rank_name} (x{style_mult:.2f})"
+            self.v1_rank_title.color = rank_col
+            self.v1_rank_line.color = rank_col
+            self.v1_style_bar_fill.scale_x = max(0.001, 0.36 * (p.v1_style_points / 1000.0))
+            self.v1_style_bar_fill.color = rank_col
+
+            log_lines = [f"{txt}" for txt, _, _ in p.v1_style_log[:5]]
+            self.v1_style_log_text.text = '\n'.join(log_lines) if log_lines else 'BLOOD IS FUEL\nСражайтесь стильно вблизи!'
+
+            w_name = p.v1_weapon_names.get(p.v1_weapon, 'REVOLVER')
+            arm_tag = 'BLUE [F]' if p.v1_active_arm == 'feedbacker' else 'RED [F]'
+            self.v1_arsenal_text.text = (
+                f"[{p.v1_weapon}] {w_name}  |  COINS: {int(p.v1_coins)}/4  |  RAIL: {int(p.v1_rail_charge)}%\n"
+                f"STAMINA: {'█' * int(p.v1_stamina)}{'░' * (3 - int(p.v1_stamina))}  |  ARM: {arm_tag} (Swap [V] / Red [G] / Hook [R])"
+            )
+            self.v1_arsenal_text.color = p.v1_weapon_cols.get(p.v1_weapon, color.cyan)
+
+            v1_slots = {
+                'm1': (f"WPN [{p.v1_weapon}]", p.v1_weapon_cols.get(p.v1_weapon, color.yellow)),
+                'm2': (f"COIN {int(p.v1_coins)}" if p.v1_weapon == 1 else ("FROZEN" if p.v1_rockets_frozen else "ALT"), color.gold),
+                'shift': (f"DASH x{int(p.v1_stamina)}", color.cyan),
+                'r': ("HOOK" if p.v1_whiplash_cd <= 0 else f"{p.v1_whiplash_cd:.1f}s", color.lime)
+            }
+            for sk_key, (box, cd_lbl, _) in self.skill_boxes.items():
+                txt_val, c_val = v1_slots[sk_key]
+                cd_lbl.text = txt_val
+                cd_lbl.color = c_val
                 box.color = rgb(35, 55, 75, 235)
-            else:
-                cd_lbl.text = f"{rem:.1f}s"
-                cd_lbl.color = color.red
-                box.color = rgb(22, 24, 32, 235)
+        else:
+            self.v1_style_hud.enabled = False
+            cds = {'m1': p.m1_cd, 'm2': p.m2_cd, 'shift': p.shift_cd, 'r': p.r_cd}
+            for sk_key, (box, cd_lbl, col) in self.skill_boxes.items():
+                rem = cds[sk_key]
+                if rem <= 0:
+                    cd_lbl.text = 'READY'
+                    cd_lbl.color = col
+                    box.color = rgb(35, 55, 75, 235)
+                else:
+                    cd_lbl.text = f"{rem:.1f}s"
+                    cd_lbl.color = color.red
+                    box.color = rgb(22, 24, 32, 235)
 
         if is_valid(self.active_boss):
             self.boss_hud.enabled = True

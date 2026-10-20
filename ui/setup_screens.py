@@ -503,6 +503,37 @@ class SetupScreensMixin:
         )
         btn_to_main.on_click = lambda: self.quit_run_to_menu(to_lobby=False)
 
+        # Панель ULTRAKILL STYLE METER & ARSENAL (только для V1)
+        self.v1_style_hud = Entity(parent=self.hud_panel, enabled=False)
+        Entity(
+            parent=self.v1_style_hud, model='quad', scale=(0.40, 0.34),
+            position=(0.64, 0.04), z=0.02, color=rgb(10, 12, 20, 225)
+        )
+        self.v1_rank_line = Entity(
+            parent=self.v1_style_hud, model='quad', scale=(0.40, 0.008),
+            position=(0.64, 0.21), z=-0.01, color=color.cyan
+        )
+        self.v1_rank_title = Text(
+            text='SUPREME', parent=self.v1_style_hud, position=(0.46, 0.19),
+            z=-0.02, scale=1.15, color=color.red
+        )
+        self.v1_style_bar_bg = Entity(
+            parent=self.v1_style_hud, model='quad', scale=(0.36, 0.016),
+            position=(0.46, 0.135), origin=(-0.5, 0), z=0.01, color=rgb(35, 38, 50)
+        )
+        self.v1_style_bar_fill = Entity(
+            parent=self.v1_style_hud, model='quad', scale=(0.36, 0.016),
+            position=(0.46, 0.135), origin=(-0.5, 0), z=-0.01, color=color.yellow
+        )
+        self.v1_style_log_text = Text(
+            text='', parent=self.v1_style_hud, position=(0.46, 0.105),
+            z=-0.02, scale=0.72, color=color.white
+        )
+        self.v1_arsenal_text = Text(
+            text='', parent=self.v1_style_hud, position=(0.42, -0.32),
+            z=-0.02, scale=0.72, color=color.cyan
+        )
+
         # Баннер уведомлений
         self.banner_text = Text(text='', parent=camera.ui, position=(0, 0.19), z=-0.04, origin=(0, 0), scale=1.15, color=color.yellow)
         self.banner_timer = 0.0

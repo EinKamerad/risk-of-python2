@@ -87,23 +87,23 @@ SURVIVOR_CLASSES = {
     },
     'v1': {
         'name': 'V1 (ULTRAKILL)',
-        'subtitle': 'MANKIND IS DEAD. BLOOD IS FUEL.',
+        'subtitle': 'FPS-РЕЖИМ | 5 ОРУЖИЙ [1-5] | 3 РУКИ [F/G/R] | STYLE METER',
         'icon': 'V1',
-        'hp': 95,
-        'speed': 12.2,
+        'hp': 100,
+        'speed': 12.6,
         'damage': 19.0,
         'fire_rate': 5.2,
-        'proj_speed': 78.0,
+        'proj_speed': 85.0,
         'proj_scale': 0.22,
         'aoe': 0.0,
         'body_color': rgb(45, 115, 235),
         'armor_color': rgb(32, 38, 52),
         'visor_color': rgb(255, 225, 40),
         'skills': {
-            'm1': {'name': 'Piercer Revolver', 'cd': 0.19, 'desc': '[ЛКМ] Высокоточные выстрелы из револьвера.'},
-            'm2': {'name': 'Marksman Ricoshot', 'cd': 4.2, 'desc': '[ПКМ] Бросок монеты: рикошет по 4 врагам + лечение кровью!'},
-            'shift': {'name': 'Slam Dash', 'cd': 3.0, 'desc': '[Shift] Сверхзвуковой рывок сквозь врагов с выкачиванием HP.'},
-            'r': {'name': 'Electric Railcannon', 'cd': 8.5, 'desc': '[R] Разряд рельсотрона, поражающий всех врагов цепной молнией.'}
+            'm1': {'name': '[1-5 / Колёсико] 5 Оружий (ЛКМ / ПКМ)', 'cd': 0.15, 'desc': '1: Marksman (Монетки) | 2: Shotgun (Ядро/Буст) | 3: Nailgun (Магнит) | 4: Railcannon | 5: Rocket (Заморозка).'},
+            'm2': {'name': '[F] Feedbacker & [G] Knuckleblaster', 'cd': 0.45, 'desc': '[F] Синяя рука: Парирование снарядов (+PARRY), Projectile Boost дробовика и удар по монетке. [G] Красная рука: взрывной удар.'},
+            'shift': {'name': '[Shift] 3x Stamina Dash & [Ctrl] Slide/Slam', 'cd': 1.0, 'desc': '3 заряда рывка с неуязвимостью. [Ctrl] на земле — подкат, в воздухе — Ground Slam с подбрасыванием врагов!'},
+            'r': {'name': '[R] Whiplash (Зелёная рука-лассо)', 'cd': 2.2, 'desc': 'Притягивает лёгких врагов к вам, а вас — к тяжёлым врагам, боссам или поверхности. Кровь вблизи лечит HP!'}
         }
     },
     'sol': {

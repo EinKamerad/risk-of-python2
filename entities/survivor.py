@@ -96,6 +96,9 @@ class Survivor(Entity, SurvivorSkillsMixin):
         camera.position = (0.85, 0.75, -8.8)
         camera.rotation = (6, 0, 0)
 
+        if self.char_key == 'v1':
+            self.init_v1_arsenal()
+
     def heal_amount(self, amount):
         """Универсальное лечение выжившего с поддержкой барьера Aegis при избыточном лечении"""
         if amount <= 0 or self.hp <= 0:
@@ -208,7 +211,9 @@ class Survivor(Entity, SurvivorSkillsMixin):
         sens = game.settings.get('sensitivity', 45)
         if mouse.locked:
             self.rotation_y += mouse.velocity[0] * sens
-            self.cam_pivot.rotation_x = clamp(self.cam_pivot.rotation_x - mouse.velocity[1] * sens, -42, 48)
+            max_pitch = 85 if self.char_key == 'v1' else 48
+            min_pitch = -85 if self.char_key == 'v1' else -42
+            self.cam_pivot.rotation_x = clamp(self.cam_pivot.rotation_x - mouse.velocity[1] * sens, min_pitch, max_pitch)
 
         move_input = Vec3(held_keys['d'] - held_keys['a'], 0, held_keys['w'] - held_keys['s'])
         self.is_moving = move_input.length() > 0
@@ -460,18 +465,22 @@ class Survivor(Entity, SurvivorSkillsMixin):
                 self.grounded = True
                 self.jumps_left = self.max_jumps
 
-        pitch_rad = math.radians(self.cam_pivot.rotation_x)
-        base_dist = 8.8
-        if pitch_rad < 0:
-            sin_p = math.sin(-pitch_rad)
-            cos_p = math.cos(pitch_rad)
-            pivot_world_y = self.y + 2.15 + 0.75 * cos_p
-            min_cam_y = floor_h + 0.55
-            avail_drop = max(0.4, pivot_world_y - min_cam_y)
-            safe_dist = avail_drop / max(0.01, sin_p)
-            camera.z = -clamp(min(base_dist, safe_dist), 2.0, base_dist)
+        if self.char_key == 'v1':
+            self.v1_update_mechanics(dt_step)
+            camera.position = (0, 0, 0)
         else:
-            camera.z = -base_dist
+            pitch_rad = math.radians(self.cam_pivot.rotation_x)
+            base_dist = 8.8
+            if pitch_rad < 0:
+                sin_p = math.sin(-pitch_rad)
+                cos_p = math.cos(pitch_rad)
+                pivot_world_y = self.y + 2.15 + 0.75 * cos_p
+                min_cam_y = floor_h + 0.55
+                avail_drop = max(0.4, pivot_world_y - min_cam_y)
+                safe_dist = avail_drop / max(0.01, sin_p)
+                camera.z = -clamp(min(base_dist, safe_dist), 2.0, base_dist)
+            else:
+                camera.z = -base_dist
 
         regen_rate = 1.5 + (self.max_hp * 0.025 * self.items.get('tarrasque', 0))
         self.hp = min(float(self.max_hp), self.hp + regen_rate * time.dt)
@@ -557,6 +566,9 @@ class Survivor(Entity, SurvivorSkillsMixin):
             absorbed = min(self.shield, dmg)
             self.shield -= absorbed
             dmg -= absorbed
+
+        if self.char_key == 'v1':
+            self.v1_style_points = max(0.0, self.v1_style_points - 180.0)
 
         self.hp -= dmg
         if self.hp <= 0:
