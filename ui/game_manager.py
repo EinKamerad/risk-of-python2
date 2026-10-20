@@ -177,13 +177,29 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         if self.stage >= 2:
             self.unlock_achievement('ach_traveler')
 
-    def enter_bazaar(self):
-        self.generate_stage(seed=random.randint(1000, 999999), special_mode='bazaar')
+    def enter_bazaar(self, seed=None, from_network=False):
+        new_seed = seed if seed is not None else random.randint(1000, 999999)
+        self.generate_stage(seed=new_seed, special_mode='bazaar')
+        if not from_network and self.net.connected:
+            self.net.broadcast({
+                'type': 'stage_sync',
+                'stage': self.stage,
+                'seed': self.stage_seed,
+                'special_mode': 'bazaar'
+            })
 
-    def enter_moon_stage(self):
-        self.generate_stage(seed=random.randint(1000, 999999), special_mode='moon')
+    def enter_moon_stage(self, seed=None, from_network=False):
+        new_seed = seed if seed is not None else random.randint(1000, 999999)
+        self.generate_stage(seed=new_seed, special_mode='moon')
+        if not from_network and self.net.connected:
+            self.net.broadcast({
+                'type': 'stage_sync',
+                'stage': self.stage,
+                'seed': self.stage_seed,
+                'special_mode': 'moon'
+            })
 
-    def on_moon_pillar_charged(self):
+    def on_moon_pillar_charged(self, from_network=False):
         self.moon_pillars_done += 1
         if self.teleporter and hasattr(self.teleporter, 'update_progress_label'):
             self.teleporter.update_progress_label(self.moon_pillars_done, 4)
@@ -195,7 +211,10 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
             rem = max(0, 4 - self.moon_pillars_done)
             self.show_banner(f'СТОЛП ЗАРЯЖЕН ({self.moon_pillars_done}/4)! ОСТАЛОСЬ ЗАРЯДИТЬ ЕЩЁ {rem}', color.lime, 3.2)
 
-    def start_mithrix_encounter(self):
+        if not from_network and self.net.connected:
+            self.net.broadcast({'type': 'moon_pillar_done', 'count': self.moon_pillars_done})
+
+    def start_mithrix_encounter(self, from_network=False):
         if self.mithrix_spawned:
             return
         self.mithrix_spawned = True
@@ -209,6 +228,8 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         self.boss_title.text = 'MITHRIX [PHASE 1/4] :: KING OF NOTHING'
         self.enemies.append(boss)
         self.show_banner('МИТРИКС, КОРОЛЬ НИЧЕГО [ФАЗА 1/4] :: БИТВА В НЕБЕСНОМ КОЛИЗЕЕ!', color.cyan, 4.2)
+        if not from_network and self.net.connected:
+            self.net.broadcast({'type': 'mithrix_start'})
 
     def on_mithrix_defeated(self, death_pos):
         self.moon_detonation_timer = 75.0
@@ -216,7 +237,6 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         ship = EscapeShip(ship_pos)
         self.stage_entities.append(ship)
 
-        # Зелёный эвакуационный портал-трамплин на южном краю Колизея для быстрого спуска к кораблю
         escape_pad = LunarEscapePad(Vec3(0, COLOSSEUM_Y, -46.0), ship_pos)
         self.stage_entities.append(escape_pad)
 
@@ -252,7 +272,12 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
         new_seed = random.randint(1000, 999999) if not from_network else self.stage_seed
         self.generate_stage(seed=new_seed, special_mode=None)
         if not from_network and self.net.connected:
-            self.net.broadcast({'type': 'stage_sync', 'stage': self.stage, 'seed': self.stage_seed})
+            self.net.broadcast({
+                'type': 'stage_sync',
+                'stage': self.stage,
+                'seed': self.stage_seed,
+                'special_mode': None
+            })
 
     def spawn_boss(self, pos, boss_type=None, net_id=None, from_network=False):
         b_type = boss_type if boss_type in BOSS_TYPES else random.choice(BOSS_TYPES)
@@ -454,7 +479,7 @@ class GameManager(Entity, PhysicsMixin, DioramaMixin, SetupScreensMixin, LobbyMi
             if self._enemy_net_timer <= 0:
                 self._enemy_net_timer = 0.22
                 pack = [
-                    [e.net_id, round(e.x, 2), round(e.y, 2), round(e.z, 2), round(e.hp, 1), e.enemy_type, round(e.coeff, 2), bool(e.is_ally)]
+                    [e.net_id, round(e.x, 2), round(e.y, 2), round(e.z, 2), round(e.hp, 1), e.enemy_type, round(e.coeff, 2), bool(e.is_ally), e.ally_owner_id]
                     for e in self.enemies if is_valid(e)
                 ]
                 self.net.broadcast({'type': 'enemies_sync', 'enemies': pack})

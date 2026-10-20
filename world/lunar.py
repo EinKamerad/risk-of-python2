@@ -47,6 +47,8 @@ class NewtAltar(Entity):
                 game.blue_orb_spawned = True
                 VisualFX(Vec3(*self.position) + Vec3(0, 1.5, 0), color.cyan, 6.0, 0.4)
                 game.show_banner('ПОЯВИЛАСЬ СИНЯЯ СФЕРА! У ТЕЛЕПОРТА ОТКРОЕТСЯ ПОРТАЛ НА БАЗАР', rgb(80, 210, 255), 3.5)
+                if getattr(ctx, 'net', None) and ctx.net.connected:
+                    ctx.net.broadcast({'type': 'newt_altar'})
             else:
                 game.show_banner('НЕДОСТАТОЧНО ЛУННЫХ МОНЕТ (НУЖНА 1 МОНЕТА)', color.red, 2.0)
 

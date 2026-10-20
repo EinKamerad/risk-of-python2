@@ -190,7 +190,7 @@ class DummyClone(Entity):
         nearest = None
         best_d = 38.0
         for e in game.enemies:
-            if is_valid(e):
+            if is_valid(e) and not getattr(e, 'is_ally', False):
                 d = distance(my_pos, Vec3(*e.position))
                 if d < best_d:
                     best_d = d
@@ -200,13 +200,14 @@ class DummyClone(Entity):
             self.look_at_2d(Vec3(*nearest.position), 'y')
             sp = my_pos + Vec3(0, 1.5, 0) + self.forward * 0.85
             aim = ((Vec3(*nearest.position) + Vec3(0, nearest.hit_height, 0)) - sp).normalized()
-            # Снаряды клона имеют is_player=True и can_proc=True, поэтому наследуют ВСЕ предметы игрока!
             Projectile(
                 pos=sp, direction=aim, speed=self.owner.proj_speed,
                 damage=self.owner.base_damage * dmg_mult,
                 scale_val=0.20, proj_color=rgb(95, 255, 135),
                 is_player=True, can_proc=True
             )
+            if hasattr(self.owner, '_broadcast_shot'):
+                self.owner._broadcast_shot(sp, aim, self.owner.proj_speed, self.owner.base_damage * dmg_mult, 0.20, 'm4a1')
             arm = self.parts['right_arm']
             arm.rotation_x = -24
             arm.animate_rotation_x(0, duration=0.10)

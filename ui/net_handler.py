@@ -100,6 +100,13 @@ class NetHandlerMixin:
                     'v1': rgb(255, 230, 50),
                     'sol': rgb(255, 110, 25),
                     'gwen': rgb(95, 225, 255),
+                    'enforcer': rgb(110, 225, 255),
+                    'scout': rgb(255, 215, 65),
+                    'm4a1': rgb(95, 255, 135),
+                    'medic': rgb(255, 75, 90),
+                    'aigis': rgb(255, 235, 95),
+                    'reimu': rgb(255, 65, 80),
+                    'mindustry': rgb(255, 215, 65),
                 }
                 p_col = net_col_map.get(col_tag, color.cyan)
                 Projectile(
@@ -110,13 +117,14 @@ class NetHandlerMixin:
                 )
 
             elif mtype == 'stage_sync':
-                new_stage = msg.get('stage', 1)
+                new_stage = msg.get('stage', self.stage)
                 new_seed = msg.get('seed', 1001)
-                if self.stage != new_stage or self.stage_seed != new_seed:
+                new_mode = msg.get('special_mode', None)
+                if self.stage != new_stage or self.stage_seed != new_seed or self.special_mode != new_mode:
                     self.stage = new_stage
                     self.stage_seed = new_seed
                     if self.running:
-                        self.generate_stage(seed=self.stage_seed)
+                        self.generate_stage(seed=self.stage_seed, special_mode=new_mode)
 
             elif mtype == 'enemy_spawn':
                 if self.running and self.net.mode == 'client':
@@ -134,7 +142,8 @@ class NetHandlerMixin:
                 if self.running and self.net.mode == 'client':
                     by_id = {e.net_id: e for e in self.enemies if is_valid(e)}
                     for item in msg.get('enemies', []):
-                        nid, ex, ey, ez, ehp, etype, ecoeff, is_al = item
+                        nid, ex, ey, ez, ehp, etype, ecoeff, is_al = item[:8]
+                        own_id = item[8] if len(item) > 8 else None
                         if nid in by_id:
                             ent = by_id[nid]
                             t_pos = Vec3(ex, ey, ez)
@@ -142,12 +151,13 @@ class NetHandlerMixin:
                                 ent.position = t_pos
                             else:
                                 ent.position = lerp(ent.position, t_pos, 0.45)
-                            if ehp < ent.hp:
-                                ent.hp = ehp
-                                if not ent.hp_bar.is_empty():
-                                    ent.hp_bar.scale_x = max(0.0, ent.hp / max(1.0, ent.max_hp))
+                            ent.hp = ehp
+                            if not ent.hp_bar.is_empty():
+                                ent.hp_bar.scale_x = clamp(ent.hp / max(1.0, ent.max_hp), 0.0, 1.0)
                             if is_al and not ent.is_ally:
-                                ent.convert_to_ally(from_network=True)
+                                ent.convert_to_ally(from_network=True, owner_id=own_id)
+                            elif is_al and own_id:
+                                ent.ally_owner_id = own_id
                         else:
                             pos = Vec3(ex, ey, ez)
                             if etype in BOSS_TYPES or etype == 'mithrix':
@@ -155,15 +165,26 @@ class NetHandlerMixin:
                             else:
                                 new_e = Enemy(pos, etype, ecoeff, net_id=nid)
                                 if is_al:
-                                    new_e.convert_to_ally(from_network=True)
+                                    new_e.convert_to_ally(from_network=True, owner_id=own_id)
                                 self.enemies.append(new_e)
 
             elif mtype == 'enemy_convert':
                 if self.running:
                     nid = msg.get('net_id')
+                    own_id = msg.get('owner_id')
                     for e in list(self.enemies):
                         if is_valid(e) and e.net_id == nid:
-                            e.convert_to_ally(from_network=True)
+                            e.convert_to_ally(from_network=True, owner_id=own_id)
+                            break
+
+            elif mtype == 'enemy_heal':
+                if self.running:
+                    nid = msg.get('net_id')
+                    amt = float(msg.get('amount', 0.0))
+                    uber_v = float(msg.get('uber', 0.0))
+                    for e in list(self.enemies):
+                        if is_valid(e) and e.net_id == nid:
+                            e.heal_ally(amount=amt, uber_dur=uber_v, from_network=True)
                             break
 
             elif mtype == 'ally_buff':
@@ -203,7 +224,24 @@ class NetHandlerMixin:
                 if self.running:
                     self.spawn_item_drop(Vec3(*msg['pos']), item_key=msg.get('item_key'), broadcast=False)
 
+            elif mtype == 'newt_altar':
+                if self.running:
+                    self.blue_orb_spawned = True
+                    self.show_banner('ПОЯВИЛАСЬ СИНЯЯ СФЕРА! У ТЕЛЕПОРТА ОТКРОЕТСЯ ПОРТАЛ НА БАЗАР', rgb(80, 210, 255), 3.5)
+
+            elif mtype == 'tp_align':
+                if self.running and self.teleporter and hasattr(self.teleporter, 'set_alignment'):
+                    self.teleporter.set_alignment(msg.get('aligned_to_moon', False), from_network=True)
+
             elif mtype == 'tp_activate':
                 if self.running and self.teleporter:
                     self.teleporter.activate_teleporter(boss_type=msg.get('boss_type'), from_network=True)
+
+            elif mtype == 'moon_pillar_done':
+                if self.running and self.special_mode == 'moon':
+                    self.on_moon_pillar_charged(from_network=True)
+
+            elif mtype == 'mithrix_start':
+                if self.running and self.special_mode == 'moon':
+                    self.start_mithrix_encounter(from_network=True)
 

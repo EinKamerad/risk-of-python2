@@ -28,6 +28,7 @@ class Enemy(Entity, BossAIMixin):
         self.enemy_type = enemy_type
         self.is_boss = (enemy_type in BOSS_TYPES or enemy_type == 'mithrix')
         self.is_ally = False
+        self.ally_owner_id = None
         self.ally_label = None
         self.coeff = coeff
         self.is_dead = False
@@ -90,8 +91,11 @@ class Enemy(Entity, BossAIMixin):
         self.hp_bar_bg = Entity(parent=self, model='quad', scale=(bar_w, 0.15), y=bar_y, color=color.black, billboard=True)
         self.hp_bar = Entity(parent=self.hp_bar_bg, model='quad', scale=(1, 1), z=-0.01, color=color.cyan if enemy_type == 'mithrix' else color.red, unlit=True)
 
-    def convert_to_ally(self, from_network=False):
-        """Ульта Медика TF2: переманивает монстра или босса на сторону выживших!"""
+    def convert_to_ally(self, from_network=False, owner_id=None):
+        """Ульта Медика TF2: переманивает монстра или босса на сторону конкретного Медика!"""
+        if owner_id is None:
+            owner_id = ctx.net.my_id if (getattr(ctx, 'net', None) and ctx.net.connected) else 'local'
+        self.ally_owner_id = owner_id
         if self.is_ally:
             return
         game = ctx.game
@@ -109,23 +113,85 @@ class Enemy(Entity, BossAIMixin):
             scale=(self.hit_radius * 2.2, 0.12, self.hit_radius * 2.2),
             y=0.1, color=color.lime, unlit=True
         )
+        owner_tag = f" ({owner_id.upper()})" if owner_id not in ('local', None) else ""
         self.ally_label = Text(
-            text='[СОЮЗНИК МЕДИКА]', parent=self,
+            text=f'[СОЮЗНИК МЕДИКА{owner_tag} ✓]', parent=self,
             y=self.hp_bar_bg.y + 0.45, scale=9.5, origin=(0, 0),
             color=color.lime, billboard=True
         )
         if game and game.active_boss is self:
             game.active_boss = None
         if not from_network and getattr(ctx, 'net', None) and ctx.net.connected:
-            ctx.net.broadcast({'type': 'enemy_convert', 'net_id': self.net_id})
+            ctx.net.broadcast({'type': 'enemy_convert', 'net_id': self.net_id, 'owner_id': self.ally_owner_id})
+
+    def heal_ally(self, amount=0.0, shield_amt=0.0, uber_dur=0.0, from_network=False):
+        """Позволяет Медику (и грибам Bungus) лечить и усиливать переманенных монстров по сети"""
+        if not is_valid(self):
+            return
+        if amount > 0:
+            self.hp = min(float(self.max_hp), self.hp + amount)
+            if not self.hp_bar.is_empty():
+                self.hp_bar.scale_x = clamp(self.hp / max(1.0, self.max_hp), 0.0, 1.0)
+        if uber_dur > 0:
+            self.damage *= 1.15
+        if not from_network and getattr(ctx, 'net', None) and ctx.net.connected:
+            ctx.net.broadcast({
+                'type': 'enemy_heal',
+                'net_id': self.net_id,
+                'amount': round(amount, 1),
+                'uber': round(uber_dur, 1)
+            })
+
+    def _get_ally_owner_entity(self, game):
+        """Возвращает сущность игрока-Медика (локального или сетевого гостя), которому принадлежит этот союзник"""
+        my_net_id = ctx.net.my_id if (getattr(ctx, 'net', None) and ctx.net.connected) else 'local'
+        if not self.ally_owner_id or self.ally_owner_id in ('local', my_net_id):
+            return game.player if is_valid(game.player) else None
+        rp = game.remote_players.get(self.ally_owner_id)
+        if is_valid(rp):
+            return rp
+        return game.player if is_valid(game.player) else None
 
     def _get_nearest_target(self, game):
         my_pos = Vec3(*self.position)
-        # Если этот монстр переманен Медиком (is_ally == True) — он ищет ближайшего вражеского монстра!
+        # Если этот монстр переманен Медиком (is_ally == True) — он защищает и сопровождает именно своего Медика!
         if self.is_ally:
+            owner_ent = self._get_ally_owner_entity(game)
+            owner_pos = Vec3(*owner_ent.position) if is_valid(owner_ent) else my_pos
+
+            # Если союзник отстал от своего Медика более чем на 28м — сначала бежит к своему Медику
+            if is_valid(owner_ent):
+                dist_to_owner = distance_2d(my_pos, owner_pos)
+                if dist_to_owner > 28.0:
+                    return owner_pos, dist_to_owner, None
+
             enemy_cands = []
             for other in game.enemies:
                 if other is not self and is_valid(other) and not getattr(other, 'is_ally', False):
+                    d_me = distance_2d(my_pos, Vec3(*other.position))
+                    d_own = distance_2d(owner_pos, Vec3(*other.position))
+                    if d_own <= 34.0 or d_me <= 20.0:
+                        enemy_cands.append((d_me, other))
+            if enemy_cands:
+                enemy_cands.sort(key=lambda x: x[0])
+                dist, target_ent = enemy_cands[0]
+                return Vec3(*target_ent.position), dist, target_ent
+
+            # Если врагов рядом нет — следует за своим Медиком на дистанции 6м
+            if is_valid(owner_ent):
+                d = distance_2d(my_pos, owner_pos)
+                if d > 6.5:
+                    return owner_pos, d, None
+            return None, 999.0, None
+
+        candidates = []
+        if is_valid(game.player):
+            candidates.append((distance_2d(my_pos, Vec3(*game.player.position)), Vec3(*game.player.position), game.player))
+        for rp in game.remote_players.values():
+            if is_valid(rp):
+                candidates.append((distance_2d(my_pos, Vec3(*rp.position)), Vec3(*rp.position), rp))
+        for other in game.enemies:
+            if other is not self and is_valid(other) and getattr(other, 'is_ally', False):
                     enemy_cands.append((distance_2d(my_pos, Vec3(*other.position)), other))
             if enemy_cands:
                 enemy_cands.sort(key=lambda x: x[0])

@@ -41,8 +41,8 @@ class Teleporter(Entity):
             color=color.red, billboard=True
         )
 
-    def toggle_alignment(self):
-        self.aligned_to_moon = not self.aligned_to_moon
+    def set_alignment(self, aligned_val, from_network=False):
+        self.aligned_to_moon = bool(aligned_val)
         game = ctx.game
         if self.aligned_to_moon:
             col = rgb(80, 215, 255)
@@ -50,7 +50,10 @@ class Teleporter(Entity):
                 p.color = col
             self.core.color = col
             self.label.color = col
-            self.label.text = '[E] Активировать Изначальный Телепорт\n[F] Цель: ЛУНА (Отправиться к Митриксу!)'
+            if self.state == 'ready':
+                self.label.text = '[E] Войти в Телепорт -> ЛУНА (К МИТРИКСУ!)'
+            else:
+                self.label.text = '[E] Активировать Изначальный Телепорт\n[F] Цель: ЛУНА (Отправиться к Митриксу!)'
             if game:
                 game.show_banner('ГРАНИ ТЕЛЕПОРТА СМЕСТИЛИСЬ И СМОТРЯТ НА ЛУНУ...', col, 3.0)
         else:
@@ -58,9 +61,18 @@ class Teleporter(Entity):
                 p.color = color.red
             self.core.color = color.red
             self.label.color = color.red
-            self.label.text = '[E] Активировать Телепорт\n[F] Цель: ПЛАНЕТА (Продолжить Цикл)'
+            if self.state == 'ready':
+                self.label.text = '[E] Войти в Телепорт -> СЛЕДУЮЩИЙ ЭТАП'
+            else:
+                self.label.text = '[E] Активировать Телепорт\n[F] Цель: ПЛАНЕТА (Продолжить Цикл)'
             if game:
                 game.show_banner('ГРАНИ ТЕЛЕПОРТА ВЫРОВНЕНЫ С ПЛАНЕТОЙ', color.orange, 2.5)
+
+        if not from_network and getattr(ctx, 'net', None) and ctx.net.connected:
+            ctx.net.broadcast({'type': 'tp_align', 'aligned_to_moon': self.aligned_to_moon})
+
+    def toggle_alignment(self):
+        self.set_alignment(not self.aligned_to_moon, from_network=False)
 
     def _try_spawn_blue_portal(self, game, my_pos):
         if getattr(game, 'blue_orb_spawned', False) and self.spawned_blue_portal is None:

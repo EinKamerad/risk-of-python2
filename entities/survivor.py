@@ -498,6 +498,10 @@ class Survivor(Entity, SurvivorSkillsMixin):
             self.net_sync_timer -= time.dt
             if self.net_sync_timer <= 0:
                 self.net_sync_timer = 0.05
+                clones_pack = [
+                    [c.slot_idx, round(c.x, 2), round(c.y, 2), round(c.z, 2), round(c.rotation_y, 1), round(c.hp, 1), int(c.max_hp)]
+                    for c in self.dummy_clones if is_valid(c)
+                ]
                 ctx.net.broadcast({
                     'type': 'player_state',
                     'player_id': ctx.net.my_id,
@@ -506,7 +510,8 @@ class Survivor(Entity, SurvivorSkillsMixin):
                     'rot_y': round(self.rotation_y, 1),
                     'hp': round(self.hp, 1),
                     'max_hp': self.max_hp,
-                    'moving': self.is_moving
+                    'moving': self.is_moving,
+                    'clones': clones_pack
                 })
 
     def take_damage(self, amount):

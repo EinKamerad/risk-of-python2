@@ -1590,7 +1590,8 @@ class SurvivorSkillsMixin:
                 hp_pct = best_enemy.hp / max(1.0, best_enemy.max_hp)
                 req_pct = 0.30 if best_enemy.is_boss else 0.50
                 if hp_pct <= req_pct:
-                    best_enemy.convert_to_ally()
+                    my_pid = ctx.net.my_id if (getattr(ctx, 'net', None) and ctx.net.connected) else 'local'
+                    best_enemy.convert_to_ally(from_network=False, owner_id=my_pid)
                     e_p = Vec3(*best_enemy.position) + Vec3(0, best_enemy.hit_height, 0)
                     LightningBeam(eye_pos, e_p, color.lime, 0.45)
                     VisualFX(e_p, color.lime, 5.5, 0.4)
